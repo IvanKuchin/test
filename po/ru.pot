@@ -1,0 +1,211 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2020-11-28 22:16-0500\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=INTEGER; plural=EXPRESSION;\n"
+
+#, c-format
+msgid "%d customers"
+msgid_plural "%d customers"
+msgstr[0] "%d заказчику"
+msgstr[1] "%d заказчикам"
+msgstr[2] "%d заказчикам"
+
+msgid "Access prohibited"
+msgstr "Нет доступа"
+
+msgid "Automatic message"
+msgstr "Автоматическое сообщение"
+
+msgid "Login contains illegal characters"
+msgstr "Логин содержит запрещенные символы"
+
+msgid "Login must be at least 8 characters"
+msgstr "Логин должен быть более 8-ми символов"
+
+msgid "Login must contain alphabet characters"
+msgstr "Логин должен состоять только из букв"
+
+msgid "SQL syntax error"
+msgstr "Ошибка БД"
+
+msgid "Sent by"
+msgstr "Отправлено"
+
+msgid "You need to enter phone number in user profile"
+msgstr "Введите номер телефона в своем профиле"
+
+msgid "adverse words present in message"
+msgstr "грубые слова присутствуют в сообщении"
+
+msgid "already exists"
+msgstr "уже существует"
+
+msgid "can't close archive"
+msgstr "не удалось закрыть фаил архива"
+
+msgid "can't create archive"
+msgstr "не удалось создать фаил архива"
+
+msgid "can't post message due to title, text and image is empty"
+msgstr "нельзя отправить сообщение с пустым заголовком, текстом и без картинок"
+
+msgid "case"
+msgstr "кейс"
+
+msgid "case closed"
+msgstr "кейс закрыт"
+
+msgid "company or occupation not found"
+msgstr "компания или должность не найдены"
+
+msgid "db is not initialized"
+msgstr "ошибка БД"
+
+msgid "destination group id unknown"
+msgstr "неизвестная группа"
+
+msgid "destination type unknown"
+msgstr "неизвестный тип перемещения"
+
+msgid "email already exists"
+msgstr "такой email уже зарегистрирован"
+
+msgid "email is empty"
+msgstr "не указан email"
+
+msgid "exceeds allowed size"
+msgstr "превышает установленный лимит"
+
+msgid "fail in ImageMagick"
+msgstr "ошибка ImageMagick"
+
+msgid "fail to insert to db"
+msgstr "ошибка БД"
+
+msgid "file size"
+msgstr "размер фаила"
+
+msgid "friendship status can't be changed"
+msgstr "нельзя изменить статус"
+
+msgid "group not found or blocked"
+msgstr "группа не найдена или заблокирована"
+
+msgid "helpdesk ticket not found"
+msgstr "кейс не найден"
+
+msgid "image not found"
+msgstr "изображение не найдено"
+
+msgid "incorrect confirmation code"
+msgstr "некорректный код"
+
+msgid "incorrect image file"
+msgstr "некорректный формат изображения"
+
+msgid "login"
+msgstr "логин"
+
+msgid "mandatory parameter missed"
+msgstr "пропущен обязательный параметр"
+
+msgid "message not found"
+msgstr "сообщение не найдено"
+
+msgid "message owner is not known"
+msgstr "не указан автор сообщения"
+
+msgid "move case to the Close_Pending state due to long waiting period"
+msgstr "кейс переведен в ожидание закрытия по причине долгого ожидания"
+
+msgid "no active avatar found"
+msgstr "нет активной аватарки"
+
+msgid "number uploaded images must be 1"
+msgstr "количество загруженных изображений должно быть 1"
+
+msgid "opened"
+msgstr "открыт"
+
+msgid "parameters incorrect"
+msgstr "некорректные параметры"
+
+msgid "phone not registered"
+msgstr "Данный номер не зарегистрирован"
+
+msgid "phone number is incorrect"
+msgstr "некорректный номер телефона"
+
+msgid "please try again"
+msgstr "попробуйте еще раз"
+
+msgid "re-login required"
+msgstr "необходимо аутентифицироваться"
+
+msgid "requested friendship status is unknown"
+msgstr "статус отношений неизвестен"
+
+msgid "service credentials not found"
+msgstr "данные сервиса не найдены"
+
+msgid "session not found"
+msgstr "сессия не найдена"
+
+msgid "sms sending error"
+msgstr "ошибка отправки смс"
+
+msgid "there was created more token than allowed"
+msgstr "создано больше токенов, чем разрешено"
+
+msgid "to change message destination, it must be written from user only"
+msgstr ""
+"что бы изменить место назначения, сообщение должно быть написано от имени "
+"пользователя (не компании)"
+
+msgid "token expired"
+msgstr "токен устарел"
+
+msgid "token not found"
+msgstr "токен не найден"
+
+msgid "try to upload as pdf"
+msgstr "попробуйте преобразовать в PDF"
+
+msgid "unknown file type"
+msgstr "допустимый формат фаилов либо JPG, либо PDF"
+
+msgid "updated"
+msgstr "изменен"
+
+msgid "user blocked or not found"
+msgstr "пользователь заблокирован или не найден"
+
+msgid "user id not found"
+msgstr "пользователь не найден"
+
+msgid "user not found"
+msgstr "пользователь не найден"
+
+msgid "wrong format"
+msgstr "некорректный формат"
+
+msgid "you are already subscribed"
+msgstr "вы уже подписаны на новости этой компании"
+
+msgid "you are not authorized"
+msgstr "у Вас недостаточно прав"

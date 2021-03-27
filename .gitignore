@@ -1,0 +1,84 @@
+# Git commit id
+git_commit_id
+
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+# *.so		# --- this line commented because source tree have libxl
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# ignore private files
+*.original
+
+#Ignore build files
+CMakeCache.txt
+CMakeFiles
+build
+cmake_install.cmake
+Makefile
+.cproject
+.project
+config.h
+config.log
+config.status
+libtool
+stamp-h1
+output/
+*.vcxproj.user
+*.opensdf
+*.sdf
+*.suo
+*.su
+*.m4
+*.a
+missing
+depcomp
+install-sh
+configure
+compile
+config.guess
+*~
+*.orig
+autom4te.cache/
+ltmain.sh
+config.sub
+ar-lib
+build/
+*.swp
+doc
+docs/
+etc/
+/build2/
+/build3/
+/cov-int/
+/.vs/
+ftpsync.settings
+sql
+sublime/

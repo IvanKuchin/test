@@ -1,0 +1,20 @@
+name: Post comment
+
+on: [push, pull_request, issues]
+
+jobs:
+  generate_commit_comment:
+    runs-on: ubuntu-latest
+    steps:
+#      - name: checkout src repo
+#        uses: actions/checkout@v2
+
+      - name: Create Commit Comment
+        uses: peter-evans/commit-comment@v1.3.1
+        with:
+          #token: ${{ github.token }}
+          #repository: ${{ github.repository }}
+          body: I'll create new commit
+#          path: CMakeLists.txt
+#          position: 2
+          

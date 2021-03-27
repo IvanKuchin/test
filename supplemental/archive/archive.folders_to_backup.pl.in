@@ -1,0 +1,11 @@
+#
+# SRCDIR hardcoded word it is used in archive.pl to build from source
+#
+SRCDIR				=> "${PROJECT_SOURCE_DIR}",
+#
+# we shouldn't mess up with web-server log files, therefore we backing up only html/ and cgi-bin/ folders
+#
+ROOTDIR_HTML		=> "${ROOTDIR}/html",
+ROOTDIR_CGI			=> "${ROOTDIR}/cgi-bin",
+IMAGEROOTDIR_HTML	=> "${IMAGEROOTDIR}/html",
+IMAGEROOTDIR_CGI	=> "${IMAGEROOTDIR}/cgi-bin",

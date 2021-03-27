@@ -1,0 +1,4 @@
+#!/bin/bash
+
+xgettext -d connme.ru -j --no-location -o ./ru.pot -s ../src/pi/*.cpp
+xgettext -d connme.ru -j --no-location -o ./ru.pot -s ../src/pd/*.cpp

@@ -1,0 +1,38 @@
+# remote backup hostname
+backup_remote_hostname => "backup.dynamic.conn-me.ru",
+# remote user
+backup_remote_username => "ikuchin",
+# local backup user
+backup_local_username => "ikuchin",
+# local user that is compiling and installing
+build_username => "ikuchin",
+# apache user
+http_username => "www-data",
+
+# Mysql tables need to be upgraded in DEV -> WWW
+# have an effect in backup_structure / restore_structure
+tables_to_upgrade => "action_category action_types site_themes faq",
+
+replace_dev_to_www_files => [
+	"SRCDIR/CMakeLists.txt",
+	"ROOTDIR_CGI/admin/templates/domain.htmlt",
+	"ROOTDIR_CGI/templates/ru/pages/domain.htmlt",
+	"ROOTDIR_CGI/admin/.htaccess",
+	"ROOTDIR_HTML/quality_assurance/.htaccess"
+],
+
+replace_devimages_to_images_files => [
+	"SRCDIR/CMakeLists.txt",
+	"ROOTDIR_HTML/.htaccess",
+],
+
+local_tmp_folder => "tmp/",
+recovery_point_folder => "recovery_point/",
+project_source_dir => "${PROJECT_SOURCE_DIR}",
+project_binary_dir => "${PROJECT_BINARY_DIR}",
+project_domain => "${MAIN_DOMAIN_NAME}",
+binary_maxmind_dir => "${MAXMIND_PROJECT_DIR}",
+project_log_dir => "${LOG_DIR}",
+local_install_dir => "${LOCAL_INSTALL_DIR}",
+login_path => "local",
+

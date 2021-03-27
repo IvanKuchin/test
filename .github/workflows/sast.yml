@@ -1,0 +1,61 @@
+---
+#########################
+#########################
+## Deploy Docker Image ##
+#########################
+#########################
+
+#
+# Documentation:
+# https://help.github.com/en/articles/workflow-syntax-for-github-actions
+#
+
+name: SAST
+#######################################
+# Start the job on all push to master #
+#######################################
+on:
+  push:
+    branches:
+      - 'master'
+  pull_request:
+    branches: ['master']
+
+###############
+# Set the Job #
+###############
+jobs:
+  build:
+    # Name the Job
+    name: SAST
+    # Set the agent to run on
+    runs-on: ubuntu-latest
+    # Only run this on the main repo
+    #if: github.repository == 'github/super-linter'
+    ##################
+    # Load all steps #
+    ##################
+    steps:
+      ##########################
+      # Checkout the code base #
+      ##########################
+      - name: Checkout Code
+        uses: actions/checkout@v2
+
+      #####################
+      # Run Deploy script #
+      #####################
+      - name: Run SAST check
+        uses: IvanKuchin/SAST@v0.1
+        with:
+          GITHUB_TOKEN: ${{ github.token }}
+        env:
+          # Set the Env Vars
+          LOG_VERBOSE: true
+          # LOG_DEBUG: true
+          # LOG_TRACE: true
+
+
+
+
+

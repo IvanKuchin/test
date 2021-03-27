@@ -1,0 +1,11 @@
+45 23 * * *	ikuchin ${CRON_INSTALL_DIR}/health
+
+# --- ikuchin required to save backup (ikuchin authenticated w/ key-pair on backup-server)
+0 3 * * *  ikuchin cd ${ARCHIVE_INSTALL_DIR}/ && ./archive.pl --backup
+
+# --- www-data is a web-server user
+* * * * *	www-data ${CRON_INSTALL_DIR}/cron_minute_pi
+5 1 * * *	www-data ${CRON_INSTALL_DIR}/cron_daily_pi
+15 1 * * *	www-data ${CRON_INSTALL_DIR}/cron_daily_pd
+
+

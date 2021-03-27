@@ -1,0 +1,6 @@
+#!/bin/bash
+
+set -ev
+
+more ${CI_SCRIPT_PROJECT_DIR}/pre.sql | mysql
+more ${CI_SCRIPT_PROJECT_DIR}/ci.sql | mysql ${PROJECT_NAME}

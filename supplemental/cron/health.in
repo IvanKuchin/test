@@ -1,0 +1,35 @@
+#/bin/bash
+
+echo ---------------- logins
+last | grep `date '+%b\s*%d'` | awk '{ print $1; }' | sort | uniq -c
+
+echo ---------------- df -h  [ge 75%]
+df -h | awk '{print ($5/1>75?$5:"")}' | sort -n | uniq
+
+echo ---------------- fail2ban
+# grep "Ban " /var/log/fail2ban.log | grep `date +%Y-%m-%d` | awk '{print $NF}' | sort | awk '{print $1,"("$1")"}' | logresolve | uniq -c | sort -n
+zgrep -h "Ban " /var/log/fail2ban.log* | grep `date +%Y-%m-%d` | awk '{print $6,$1}' | sort | uniq -c 
+
+echo --------------- ${MAIN_DOMAIN_NAME} running time [sec]
+cat -v ${LOG_DIR}${MAIN_DOMAIN_NAME}.log | grep "microseconds" | grep `date '+%b\s%d'` | awk '{ print $8/1000000; }' | sort -n | tail
+
+echo --------------- ${MAIN_DOMAIN_NAME} longest running time + action [sec]. number of lines could be less than prev if no action grepped
+cat -v ${LOG_DIR}${MAIN_DOMAIN_NAME}.log* | grep "microseconds" | grep `date '+%b\s%d'` | awk '{ print $8; }' | sort -n | tail | xargs -I % sh -c "cat -v ${LOG_DIR}${MAIN_DOMAIN_NAME}.log* | grep % | grep chrono " | awk '{ print $3; }' | awk -F \[ '{ print $2; }' | awk -F \] '{ print $1; }' | xargs -I % sh -c "cat -v ${LOG_DIR}${MAIN_DOMAIN_NAME}.log* | grep \"\[%\]\" " | grep `date '+%b\s%d'` | grep "HTTP parameter" | grep "action=" | awk '{ print $1, $2, $3, $8 }'
+
+echo --------------- ${MAIN_DOMAIN_NAME} log: ERRORS
+cat -v ${LOG_DIR}${MAIN_DOMAIN_NAME}.* | grep "ERROR" | grep `date '+%b\s%d'`
+
+echo --------------- ${MAIN_DOMAIN_NAME} log: emojy detector
+cat -v ${LOG_DIR}${MAIN_DOMAIN_NAME}.log | grep "emojy detected" | grep `date '+%b\s%d'`
+
+echo --------------- ${MAIN_DOMAIN_NAME}: general punctuation detector
+cat -v ${LOG_DIR}${MAIN_DOMAIN_NAME}.log | grep "general punctuation detected" | grep `date '+%b\s%d'`
+
+echo --------------- ${MAIN_DOMAIN_NAME} log: lost pictures in DB [setID = 0]
+echo "select \`id\` from \`feed_images\` where \`setID\`='0';" | mysql -u ${PROJECT_NAME}RO -p${PROJECT_NAME}RO ${MAIN_DOMAIN_NAME} 2>/dev/null | grep -v id
+
+echo --------------- ${MAIN_DOMAIN_NAME} log: book complains
+echo "select \`id\` from \`book_complains\` where \`state\`='new';" | mysql -u ${PROJECT_NAME}RO -p${PROJECT_NAME}RO ${MAIN_DOMAIN_NAME} 2>/dev/null | grep -v id
+
+echo --------------- src repository check
+cd ${CRON_INSTALL_DIR} && ./health_srcdiff.pl

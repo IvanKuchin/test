@@ -1,0 +1,12 @@
+name: lint
+
+on: [pull_request]
+jobs:
+  clang-tidy:
+    name: clang-tidy
+    runs-on: ubuntu-latest
+    steps:
+      - name: clang-tidy check
+        uses: Tlazypanda/cpp-clang-check@0.13
+    env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

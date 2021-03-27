@@ -1,0 +1,38 @@
+# remote backup hostname
+backup_hostname => "backup.dynamic.conn-me.ru",
+backup_username => "ikuchin",
+
+# Mysql tables need to be upgraded in DEV -> WWW
+# have an effect in backup_structure / restore_structure
+tables_to_upgrade => "action_category action_types site_themes",
+
+replace_dev_to_www_files => [
+	"SRCDIR/supplemental/cron/health.in",
+	"SRCDIR/src/pi/include/localy.h.in",
+	"SRCDIR/src/pi/include/csession.h",
+	"SRCDIR/CMakeLists.txt", 
+	"ROOTDIR_CGI/admin/templates/domain.htmlt",
+	"ROOTDIR_CGI/templates/ru/pages/domain.htmlt",
+	"ROOTDIR_HTML/js/pages/chat.js",
+	"ROOTDIR_HTML/quality_assurance/chat_checking.html",
+	"ROOTDIR_HTML/quality_assurance/chat_image_uploading_ddos.html",
+	"ROOTDIR_CGI/admin/..htaccess",
+	"ROOTDIR_CGI/admin/.htaccess",
+	"ROOTDIR_HTML/quality_assurance/..htaccess",
+	"ROOTDIR_HTML/quality_assurance/.htaccess"
+],
+
+replace_devimages_to_images_files => [
+	"SRCDIR/CMakeLists.txt",
+	"ROOTDIR_HTML/.htaccess",
+	"ROOTDIR_HTML/..htaccess"
+],
+
+local_tmp_folder => "tmp/",
+recovery_point_folder => "recovery_point/",
+
+localy_h_file_backup_location => "${PROJECT_BINARY_DIR}/src/pi/include/localy.h",
+localy_h_file_restore_location => "SRCDIR/build/src/pi/include/localy.h",
+project_source_dir => "${PROJECT_SOURCE_DIR}",
+project_binary_dir => "${PROJECT_BINARY_DIR}",
+project_domain => "${PROJECT_NAME}",
