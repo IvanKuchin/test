@@ -1,5 +1,6 @@
 FROM ubuntu:xenial as libwebsocket
 
+RUN echo ${BUILD_VERSION}
 RUN apt update && apt install --no-install-recommends --no-install-suggests -y \
 			build-essential \
 			ca-certificates \
