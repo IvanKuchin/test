@@ -44,6 +44,9 @@ jobs:
     # Load all steps #
     ##################
     steps:
+      - name: docker network
+        run: |
+          docker network ls
      #############################
      # Init deployment variables #
      #############################
