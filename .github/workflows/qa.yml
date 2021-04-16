@@ -56,6 +56,7 @@ jobs:
           echo ::set-output name=BUILD_REPO::$(echo ${GITHUB_REPOSITORY} | awk -F/ '{ print $2; }')
       - name: print deploymnet variables
         run: |
+          echo $GITHUB_REF
           echo $BUILD_RELEASE
           echo $BUILD_RELEASE_MAJOR
           echo $BUILD_DATE
