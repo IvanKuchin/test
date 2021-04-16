@@ -57,6 +57,7 @@ jobs:
           echo ::set-output name=BUILD_RELEASE_MAJOR::`echo ${GITHUB_REF%%.*} | awk -F/ '{ print v$3; }'`
           echo ::set-output name=BUILD_DATE::`date -u +'%Y-%m-%dT%H:%M:%SZ'`
           echo ::set-output name=BUILD_REPO::$(echo ${GITHUB_REPOSITORY} | awk -F/ '{ print $2; }')
+          echo ::set-output name=DOCKER_NET::`docker network ls --filter name=github --format "{{.Name}}"`
       - name: print deploymnet variables
         run: |
           echo $GITHUB_REF
@@ -64,11 +65,13 @@ jobs:
           echo $BUILD_RELEASE_MAJOR
           echo $BUILD_DATE
           echo $BUILD_REPO
+          echo $DOCKER_NET
         env:
           BUILD_RELEASE: ${{ steps.set_variables.outputs.BUILD_RELEASE }}
           BUILD_RELEASE_MAJOR: ${{ steps.set_variables.outputs.BUILD_RELEASE_MAJOR }}
           BUILD_DATE: ${{ steps.set_variables.outputs.BUILD_DATE }}
           BUILD_REPO: ${{ steps.set_variables.outputs.BUILD_REPO }}
+          DOCKER_NET: ${{ steps.set_variables.outputs.DOCKER_NET }}
 
       ##########################
       # Checkout the code base #
@@ -106,6 +109,7 @@ jobs:
             DB_LOGIN=root
             DB_PASSWORD=toor
             DB_HOST=mysql
+          network: ${{ steps.set_variables.outputs.DOCKER_NET }}
           push: false
           tags: |
             ghcr.io/ivankuchin/${{ steps.set_variables.outputs.BUILD_REPO }}:${{ github.sha }}
