@@ -10,7 +10,7 @@
 # https://help.github.com/en/articles/workflow-syntax-for-github-actions
 #
 
-name: Release deployment
+name: QA testing
 
 #######################################
 # Start the job on all push to master #
