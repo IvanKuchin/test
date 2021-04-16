@@ -105,6 +105,4 @@ jobs:
             DB_HOST=mysql
           push: false
           tags: |
-            ghcr.io/ivankuchin/${{ steps.set_variables.outputs.BUILD_REPO }}:${{ steps.set_variables.outputs.BUILD_RELEASE }}
-            ghcr.io/ivankuchin/${{ steps.set_variables.outputs.BUILD_REPO }}:${{ steps.set_variables.outputs.BUILD_RELEASE_MAJOR }}
-            ghcr.io/ivankuchin/${{ steps.set_variables.outputs.BUILD_REPO }}:latest
+            ghcr.io/ivankuchin/${{ steps.set_variables.outputs.BUILD_REPO }}:${{ github.sha }}
