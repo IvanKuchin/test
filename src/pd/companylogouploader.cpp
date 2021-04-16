@@ -1,24 +1,25 @@
 #include "companylogouploader.h"	 
 
-bool ImageSaveAsJpg (const string src, const string dst)
+static bool ImageSaveAsJpg (const string src, const string dst, c_config *config)
 {
-	{
-		CLog	log;
-
-		log.Write(DEBUG, string(__func__) + "(" + src + ", " + dst + ")[" + to_string(__LINE__) + "]: start");
-	}
+	MESSAGE_DEBUG("", "", "start (" + src + ", " + dst + ")");
 
 #ifndef IMAGEMAGICK_DISABLE
 	// Construct the image object. Separating image construction from the
 	// the read operation ensures that a failure to read the image file
 	// doesn't render the image object useless.
-	try {
+
+	auto	companylogo_max_width	= stod_noexcept(config->GetFromFile("image_max_width", "company"));
+	auto	companylogo_max_height	= stod_noexcept(config->GetFromFile("image_max_height", "company"));
+
+	try 
+	{
 		Magick::Image		   image;
 		Magick::OrientationType imageOrientation;
 		Magick::Geometry		imageGeometry;
 
 		// Read a file into image object
-		image.read( src );
+		image.read( src );    /* Flawfinder: ignore */
 
 		imageGeometry = image.size();
 		imageOrientation = image.orientation();
@@ -40,17 +41,17 @@ bool ImageSaveAsJpg (const string src, const string dst)
 		if(imageOrientation == Magick::RightBottomOrientation) { image.flop(); image.rotate(90); }
 		if(imageOrientation == Magick::LeftBottomOrientation) image.rotate(-90);
 
-		if((imageGeometry.width() > COMPANYLOGO_MAX_WIDTH) || (imageGeometry.height() > COMPANYLOGO_MAX_HEIGHT))
+		if((imageGeometry.width() > companylogo_max_width) || (imageGeometry.height() > companylogo_max_height))
 		{
 			int   newHeight, newWidth;
 			if(imageGeometry.width() >= imageGeometry.height())
 			{
-				newWidth = COMPANYLOGO_MAX_WIDTH;
+				newWidth = companylogo_max_width;
 				newHeight = newWidth * imageGeometry.height() / imageGeometry.width();
 			}
 			else
 			{
-				newHeight = COMPANYLOGO_MAX_HEIGHT;
+				newHeight = companylogo_max_height;
 				newWidth = newHeight * imageGeometry.width() / imageGeometry.height();
 			}
 
@@ -62,50 +63,42 @@ bool ImageSaveAsJpg (const string src, const string dst)
 	}
 	catch( Magick::Exception &error_ )
 	{
-		{
-			CLog	log;
-			log.Write(DEBUG, string(__func__) + "(" + src + ", " + dst + ")[" + to_string(__LINE__) + "]: exception in read/write operation [" + error_.what() + "]");
-		}
+		MESSAGE_ERROR("", "", "exception in read/write operation [" + error_.what() + "]");
+
 		return false;
 	}
-	{
-		CLog	log;
-		log.Write(DEBUG, string(__func__) + "(" + src + ", " + dst + ")[" + to_string(__LINE__) + "]: finish (image has been successfully converted to .jpg format)");
-	}
+
+	MESSAGE_DEBUG("", "", "finish (image has been successfully converted to .jpg format)");
+
 	return true;
 #else
-	{
-		CLog	log;
-		log.Write(DEBUG, string(__func__) + "(" + src + ", " + dst + ")[" + to_string(__LINE__) + "]: simple file coping, because ImageMagick++ is not activated");
-	}
+	MESSAGE_DEBUG("", "", "start (simple file coping, because ImageMagick++ is not activated)");
+
 	CopyFile(src, dst);
-	{
-		CLog	log;
-		log.Write(DEBUG, string(__func__) + "(" + src + ", " + dst + ")[" + to_string(__LINE__) + "]: finish");
-	}
+
+	MESSAGE_DEBUG("", "", "finish");
+
 	return  true;
 #endif
 }
 
 int main()
 {
-	CStatistics	 appStat;  // --- CStatistics must be a first statement to measure end2end param's
+	CStatistics		appStat;  // --- CStatistics must be a first statement to measure end2end param's
 	CCgi			indexPage(EXTERNAL_TEMPLATE);
-	CUser		   user;
-	string		  action;
-	CMysql		  db;
+	CUser			user;
+	c_config		config(CONFIG_DIR);
+	string			action;
+	CMysql			db;
 	struct timeval  tv;
 	ostringstream   ostJSONResult/*(static_cast<ostringstream&&>(ostringstream() << "["))*/;
 
-	{
-		CLog	log;
-		log.Write(DEBUG, string(__func__) + string("[") + to_string(__LINE__) + "]: " + __FILE__);
-	}
+	MESSAGE_DEBUG("", "", __FILE__);
 
 	signal(SIGSEGV, crash_handler); 
 
 	gettimeofday(&tv, NULL);
-	srand(tv.tv_sec * tv.tv_usec * 100000);
+	srand(tv.tv_sec * tv.tv_usec * 100000);    /* Flawfinder: ignore */
 	ostJSONResult.clear();
 		
 	try
@@ -120,7 +113,7 @@ int main()
 			throw CException("Template file was missing");
 		}
 
-		if(db.Connect() < 0)
+		if(db.Connect(&config) < 0)
 		{
 			CLog	log;
 
@@ -149,7 +142,7 @@ int main()
 				throw CExceptionHTML("environment variable error");
 			}
 
-			action = GenerateSession(action, &indexPage, &db, &user);
+			action = GenerateSession(action, &config, &indexPage, &db, &user);
 		}
 		// ------------ end generate common parts
 
@@ -175,31 +168,26 @@ int main()
 						for(int filesCounter = 0; filesCounter < indexPage.GetFilesHandler()->Count(); filesCounter++)
 						{
 							FILE			*f;
-							int			 folderID = (int)(rand()/(RAND_MAX + 1.0) * COMPANYLOGO_NUMBER_OF_FOLDERS) + 1;
-							string		  filePrefix = GetRandom(20);
-							string		  file2Check, tmpFile2Check, tmpImageJPG, fileName, fileExtension;
+							auto			number_of_folders	= stod_noexcept(config.GetFromFile("number_of_folders", "company"));
+							auto			file_size_limit		= stod_noexcept(config.GetFromFile("max_file_size", "company"));
+							auto			folderID			= (int)(rand()/(RAND_MAX + 1.0) * number_of_folders) + 1;
+							auto			filePrefix			= GetRandom(20);
+							string			file2Check, tmpFile2Check, tmpImageJPG, fileName, fileExtension;
 							ostringstream   ost;
 
-							if(indexPage.GetFilesHandler()->GetSize(filesCounter) > COMPANYLOGO_MAX_FILE_SIZE) 
+							if(indexPage.GetFilesHandler()->GetSize(filesCounter) > file_size_limit) 
 							{
-								CLog			log;
-								ostringstream   ost;
-
-								ost.str("");
-								ost << string(__func__) << "[" << to_string(__LINE__) << "]:ERROR: avatar file [" << indexPage.GetFilesHandler()->GetName(filesCounter) << "] size exceed permitted maximum: " << indexPage.GetFilesHandler()->GetSize(filesCounter) << " > " << COMPANYLOGO_MAX_FILE_SIZE;
-
-								log.Write(ERROR, ost.str());
+								MESSAGE_ERROR("", "", "avatar file [" + indexPage.GetFilesHandler()->GetName(filesCounter) + "] size exceed permitted maximum: " + to_string(indexPage.GetFilesHandler()->GetSize(filesCounter)) + " > " + to_string(file_size_limit));
 								throw CExceptionHTML("avatar file size exceed", indexPage.GetFilesHandler()->GetName(filesCounter));
 							}
 
 							//--- check avatar file existing
 							do
 							{
-								ostringstream   ost;
 								string		  tmp;
 								std::size_t  foundPos;
 
-								folderID = (int)(rand()/(RAND_MAX + 1.0) * COMPANYLOGO_NUMBER_OF_FOLDERS) + 1;
+								folderID = (int)(rand()/(RAND_MAX + 1.0) * number_of_folders) + 1;
 								filePrefix = GetRandom(20);
 								tmp = indexPage.GetFilesHandler()->GetName(filesCounter);
 
@@ -212,31 +200,18 @@ int main()
 									fileExtension = ".jpg";
 								}
 
-								ost.str("");
-								ost << IMAGE_COMPANIES_DIRECTORY << "/" << folderID << "/" << filePrefix << ".jpg";
-								file2Check = ost.str();
+								file2Check = config.GetFromFile("image_folders", "company") + "/" + to_string(folderID) + "/" + filePrefix + ".jpg";
+								tmpFile2Check = "/tmp/tmp_" + filePrefix + fileExtension;
+								tmpImageJPG = "/tmp/" + filePrefix + ".jpg";
 
-								ost.str("");
-								ost << "/tmp/tmp_" << filePrefix << fileExtension;
-								tmpFile2Check = ost.str();
-
-								ost.str("");
-								ost << "/tmp/" << filePrefix << ".jpg";
-								tmpImageJPG = ost.str();
 							} while(isFileExists(file2Check) || isFileExists(tmpFile2Check) || isFileExists(tmpImageJPG));
 
 
+							MESSAGE_DEBUG("", "", "Save file to /tmp for checking of image validity [" + tmpFile2Check + "]");
 
-							{
-								CLog	log;
-								ostringstream   ost;
-
-								ost << __func__ << "[" << __LINE__ << "]: Save file to /tmp for checking of image validity [" << tmpFile2Check << "]";
-								log.Write(DEBUG, ost.str());
-							}
 
 							// --- Save file to "/tmp/" for checking of image validity
-							f = fopen(tmpFile2Check.c_str(), "w");
+							f = fopen(tmpFile2Check.c_str(), "w");    /* Flawfinder: ignore */
 							if(f == NULL)
 							{
 								{
@@ -249,7 +224,7 @@ int main()
 							fwrite(indexPage.GetFilesHandler()->Get(filesCounter), indexPage.GetFilesHandler()->GetSize(filesCounter), 1, f);
 							fclose(f);
 
-							if(ImageSaveAsJpg(tmpFile2Check, tmpImageJPG))
+							if(ImageSaveAsJpg(tmpFile2Check, tmpImageJPG, &config))
 							{
 
 								MESSAGE_DEBUG("", "", "chosen filename for avatar [" + file2Check + "]")
@@ -257,7 +232,7 @@ int main()
 								// --- remove previous logo
 								if(db.Query("select `logo_folder`, `logo_filename` from `company` where `id`=\"" + companyID + "\";"))
 								{
-									string  currLogo = string(IMAGE_COMPANIES_DIRECTORY) + "/" + db.Get(0, "logo_folder") + "/" + db.Get(0, "logo_filename");
+									auto  currLogo = config.GetFromFile("image_folders", "company") + "/" + db.Get(0, "logo_folder") + "/" + db.Get(0, "logo_filename");
 
 									if(isFileExists(currLogo)) 
 									{

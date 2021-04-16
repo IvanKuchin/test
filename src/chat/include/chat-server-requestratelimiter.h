@@ -3,6 +3,8 @@
 
 #include <unordered_map>
 #include <utility>
+
+#include "chat-server-const.h"
 #include "cmysql.h"
 #include "clog.h"
 #include "localy.h"

@@ -2,6 +2,7 @@
 
 /* message protocol */
 extern	CMysql						db;
+extern	c_config					config;
 extern	double						dbConnectionInitTimestamp;
 extern  CPresenceCache				presenceCache;
 		CChatRequestRatelimiter		requestRatelimiter; 
@@ -43,7 +44,7 @@ bool ImageSaveAsJpg (const string src, const string dst, struct ExifInfo *exifIn
 }
 
 		// Read a file into image object
-		image.read( src );
+		image.read( src );    /* Flawfinder: ignore */
 
 {
 	CLog	log(CHAT_LOG_FILE_NAME);
@@ -268,7 +269,7 @@ bool ImageSaveAsJpg (const string src, const string dst, struct ExifInfo *exifIn
 string SaveAndCheckPreImageToTmpLocation(const string &fileContent)
 {
 	// FILE			*f;
-	int				folderID = (int)(rand()/(RAND_MAX + 1.0) * FEEDIMAGE_NUMBER_OF_FOLDERS) + 1;
+	int				folderID = (int)(rand()/(RAND_MAX + 1.0) * CHAT_IMAGE_NUMBER_OF_FOLDERS) + 1;
 	string			filePrefix = GetRandom(20);
 	string			finalFile, tmpFile2Check, tmpImageJPG, fileName, fileExtension;
 	string			httpImageLocation = "";
@@ -296,7 +297,7 @@ string SaveAndCheckPreImageToTmpLocation(const string &fileContent)
 		fileExtension = ".jpg";
 
 		ost.str("");
-		ost << IMAGE_CHAT_DIRECTORY << "/" << folderID << "/" << filePrefix << ".jpg";
+		ost << CHAT_IMAGE_DIRECTORY << "/" << folderID << "/" << filePrefix << ".jpg";
 		finalFile = ost.str();
 
 		ost.str("");
@@ -322,12 +323,12 @@ string SaveAndCheckPreImageToTmpLocation(const string &fileContent)
 
 	// --- strip the header "data:image/XXXX;base64,"
 	base64Prefix = fileContent.find(";base64,");
-	if((base64Prefix != string::npos) && ((base64Prefix + strlen(";base64,")) < fileContent.length()))
+	if((base64Prefix != string::npos) && ((base64Prefix + strlen(";base64,")) < fileContent.length()))    /* Flawfinder: ignore */
 	{
 		// --- Save file to "/tmp/" for checking of image validity
 		ofstream	ofs;
-		ofs.open(tmpFile2Check, ofstream::out);
-		ofs << base64_decode(fileContent.substr(base64Prefix + strlen(";base64,")));
+		ofs.open(tmpFile2Check, ofstream::out);    /* Flawfinder: ignore */
+		ofs << base64_decode(fileContent.substr(base64Prefix + strlen(";base64,")));    /* Flawfinder: ignore */
 		ofs.close();
 
 		if(ImageSaveAsJpg(tmpFile2Check, tmpImageJPG))
@@ -792,7 +793,7 @@ bool ReplicateMessageToAllConnectionsSrcUser(CSingleMessage *singleMessage)
 		else
 		{
 			CLog			log(CHAT_LOG_FILE_NAME);
-			string			remote_ip = getenv("REMOTE_ADDR");
+			string			remote_ip = getenv("REMOTE_ADDR");    /* Flawfinder: ignore */
 			struct timeval	stm;
 
 			gettimeofday(&stm, NULL);
@@ -861,7 +862,7 @@ bool ReplicateMessageToAllConnectionsDstUser(CSingleMessage *singleMessage)
 		else
 		{
 			CLog			log(CHAT_LOG_FILE_NAME);
-			string			remote_ip = getenv("REMOTE_ADDR");
+			string			remote_ip = getenv("REMOTE_ADDR");    /* Flawfinder: ignore */
 			struct timeval	stm;
 
 			gettimeofday(&stm, NULL);
@@ -1175,7 +1176,7 @@ string GetChatInitialData(struct per_session_data__message *pss, const string ac
 	else
 	{
 		CLog			log(CHAT_LOG_FILE_NAME);
-		string			remote_ip = getenv("REMOTE_ADDR");
+		string			remote_ip = getenv("REMOTE_ADDR");    /* Flawfinder: ignore */
 		struct timeval	stm;
 
 		gettimeofday(&stm, NULL);
@@ -1230,7 +1231,7 @@ string GetMessageBlock(string friendID, string minMessageID, struct per_session_
 	else
 	{
 		CLog			log(CHAT_LOG_FILE_NAME);
-		string			remote_ip = getenv("REMOTE_ADDR");
+		string			remote_ip = getenv("REMOTE_ADDR");    /* Flawfinder: ignore */
 		struct timeval	stm;
 
 		gettimeofday(&stm, NULL);
@@ -1320,7 +1321,7 @@ bool ChangeMessageStatusInDB(string messageID, string messageStatus, struct per_
 	else
 	{
 		CLog			log(CHAT_LOG_FILE_NAME);
-		string			remote_ip = getenv("REMOTE_ADDR");
+		string			remote_ip = getenv("REMOTE_ADDR");    /* Flawfinder: ignore */
 		struct timeval	stm;
 
 		gettimeofday(&stm, NULL);
@@ -1548,11 +1549,11 @@ int BuildUsersMapFromString(const string src, unordered_map<long int, string> &d
 			nextPointer = trimmedStr.find(",", prevPointer);
 			if(nextPointer == string::npos)
 			{
-				dst.emplace( atol(trimmedStr.substr(prevPointer).c_str()), "");
+				dst.emplace( stol(trimmedStr.substr(prevPointer)), "");
 			}
 			else
 			{
-				dst.emplace( atol(trimmedStr.substr(prevPointer, nextPointer - prevPointer).c_str()), "");
+				dst.emplace( stol(trimmedStr.substr(prevPointer, nextPointer - prevPointer)), "");
 			}
 			prevPointer = nextPointer + 1;
 			wordCounter++;
@@ -1655,7 +1656,7 @@ int	PacketReassembly(struct per_session_data__message *pss, void *in, size_t len
 			ost << string(__func__) + "[" + to_string(__LINE__) + "]: copy fragment at offset " << pss->packetSize;
 			log.Write(DEBUG, ost.str());
 		} // --- CLog
-		memcpy(pss->packetReassemble + pss->packetSize, in, len);
+		memcpy(pss->packetReassemble + pss->packetSize, in, len);    /* Flawfinder: ignore */
 		pss->packetSize += len;
 		pss->packetReassemble[pss->packetSize] = 0;
 
@@ -1713,7 +1714,7 @@ bool CheckDBConnectionReset()
 		dbConnectionInitTimestamp = currentTimestamp;
 			
 		db.CloseDB();
-		if(db.Connect() < 0)
+		if(db.Connect(&config) < 0)
 		{
 			result = false;
 			{
@@ -1755,7 +1756,7 @@ callback_lws_message(struct lws *wsi, enum lws_callback_reasons reason,
 	struct per_session_data__message *pss =
 			(struct per_session_data__message *)user;
 	// unsigned char *p = &buf[LWS_PRE];
-	char name[128], rip[128];
+	char name[128], rip[128];    /* Flawfinder: ignore */
 
 
 	if(!CheckDBConnectionReset())
@@ -1793,9 +1794,9 @@ callback_lws_message(struct lws *wsi, enum lws_callback_reasons reason,
 		pss->wsi = wsi;
 		lws_get_peer_addresses(wsi, lws_get_socket_fd(wsi), name,
 			   sizeof(name), rip, sizeof(rip));
-		sprintf(pss->ip, "%s (%s)", name, rip);
+		sprintf(pss->ip, "%s (%s)", name, rip);  /* Flawfinder: ignore */
 		gettimeofday(&pss->tv_established, NULL);
-		strcpy(pss->user_agent, "unknown");
+		strcpy(pss->user_agent, "unknown");    /* Flawfinder: ignore */
 		lws_hdr_copy(wsi, pss->user_agent, sizeof(pss->user_agent),
 				 WSI_TOKEN_HTTP_USER_AGENT);
 
@@ -1842,7 +1843,7 @@ callback_lws_message(struct lws *wsi, enum lws_callback_reasons reason,
 						bufferToWrite = tempSmartPointer.get();
 
 						memset(bufferToWrite, 0, bufferLength);
-						memcpy(bufferToWrite + LWS_SEND_BUFFER_PRE_PADDING, writeString.c_str(), bufferLength - (LWS_SEND_BUFFER_PRE_PADDING + LWS_SEND_BUFFER_POST_PADDING));
+						memcpy(bufferToWrite + LWS_SEND_BUFFER_PRE_PADDING, writeString.c_str(), bufferLength - (LWS_SEND_BUFFER_PRE_PADDING + LWS_SEND_BUFFER_POST_PADDING));    /* Flawfinder: ignore */
 						bytesWrittenToSocket = lws_write(wsi, (unsigned char *)(bufferToWrite + LWS_SEND_BUFFER_PRE_PADDING), bufferLength - (LWS_SEND_BUFFER_PRE_PADDING + LWS_SEND_BUFFER_POST_PADDING), LWS_WRITE_TEXT);
 						if (bytesWrittenToSocket < (bufferLength - (LWS_SEND_BUFFER_PRE_PADDING + LWS_SEND_BUFFER_POST_PADDING)))
 						{

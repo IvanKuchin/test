@@ -1,0 +1,109 @@
+---
+#########################
+#########################
+## Deploy Docker Image ##
+#########################
+#########################
+
+#
+# Documentation:
+# https://help.github.com/en/articles/workflow-syntax-for-github-actions
+#
+
+name: Release deployment
+
+#######################################
+# Start the job on all push to master #
+#######################################
+on:
+  push:
+  pull_request:
+    branches: ['master']
+
+###############
+# Set the Job #
+###############
+jobs:
+  build:
+    # Name the Job
+    name: job 1
+    # Set the agent to run on
+    runs-on: ubuntu-latest
+    # Only run this on the main repo
+    # if: github.repository == 'github/super-linter'
+
+    services:
+      mysql:
+        image: mysql:5.7
+      env:
+        MYSQL_ROOT_PASSWORD: toor
+        MYSQL_DATABASE: db
+      options: --health-cmd="mysqladmin -ptoor ping" --health-interval=10s --health-timeout=5s --health-retries=3
+
+    ##################
+    # Load all steps #
+    ##################
+    steps:
+     #############################
+     # Init deployment variables #
+     #############################
+      - name: init deploymnet variables
+        id: set_variables
+        run: |
+          echo ::set-output name=BUILD_RELEASE::${GITHUB_REF#refs/tags/}
+          echo ::set-output name=BUILD_RELEASE_MAJOR::`echo ${GITHUB_REF%%.*} | awk -F/ '{ print v$3; }'`
+          echo ::set-output name=BUILD_DATE::`date -u +'%Y-%m-%dT%H:%M:%SZ'`
+          echo ::set-output name=BUILD_REPO::$(echo ${GITHUB_REPOSITORY} | awk -F/ '{ print $2; }')
+      - name: print deploymnet variables
+        run: |
+          echo $BUILD_RELEASE
+          echo $BUILD_RELEASE_MAJOR
+          echo $BUILD_DATE
+          echo $BUILD_REPO
+        env:
+          BUILD_RELEASE: ${{ steps.set_variables.outputs.BUILD_RELEASE }}
+          BUILD_RELEASE_MAJOR: ${{ steps.set_variables.outputs.BUILD_RELEASE_MAJOR }}
+          BUILD_DATE: ${{ steps.set_variables.outputs.BUILD_DATE }}
+          BUILD_REPO: ${{ steps.set_variables.outputs.BUILD_REPO }}
+
+      ##########################
+      # Checkout the code base #
+      ##########################
+      - name: Checkout Code
+        uses: actions/checkout@v2.3.4
+
+      ########################
+      # Setup Docker build X #
+      ########################
+      - name: Setup BuildX
+        uses: docker/setup-buildx-action@v1
+
+      ####################################
+      # Replace variables in Dockerfiles #
+      ####################################
+      - name: Replace variables in Dockerfiles
+        run: |
+          find ./supplemental/docker/ -name Dockerfile* | xargs -I % sed -i -e 's/__BUILD_REPO__/${{ steps.set_variables.outputs.BUILD_REPO }}/' %
+
+      ###########################################
+      # Build and Push containers to registries #
+      ###########################################
+      - name: Build and push
+        if: success()
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          file: ./supplemental/docker/qa/Dockerfile
+          build-args: |
+            BUILD_DATE=${{ env.BUILD_DATE }}
+            BUILD_REVISION=${{ github.sha }}
+            BUILD_VERSION=${{ github.sha }}
+            DB_NAME=db
+            DB_LOGIN=root
+            DB_PASSWORD=toor
+            DB_HOST=mysql
+          push: false
+          tags: |
+            ghcr.io/ivankuchin/${{ steps.set_variables.outputs.BUILD_REPO }}:${{ steps.set_variables.outputs.BUILD_RELEASE }}
+            ghcr.io/ivankuchin/${{ steps.set_variables.outputs.BUILD_REPO }}:${{ steps.set_variables.outputs.BUILD_RELEASE_MAJOR }}
+            ghcr.io/ivankuchin/${{ steps.set_variables.outputs.BUILD_REPO }}:latest

@@ -6,6 +6,8 @@
 #include <string>
 #include <algorithm>
 #include <sstream>
+
+#include "chat-server-const.h"
 #include "clog.h"
 
 class JSONParser {

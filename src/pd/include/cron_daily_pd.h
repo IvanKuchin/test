@@ -17,6 +17,11 @@
 #include "clog.h"
 #include "localy.h"
 
+// --- Distances
+#define	SINGLE_MESSAGE_DISTANCE						0.1 // --- about 30 km
+#define	PRESENCE_DIAMETER							2	// --- about 140 km
+#define	YEAR_AGO_REPOST_THRESHOLD					80
+
 struct	MessageType
 {
 	string				messageID;

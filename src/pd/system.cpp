@@ -22,20 +22,19 @@ int main()
 {
 	CStatistics			appStat;  // --- CStatistics must be a first statement to measure end2end param's
 	CCgi				indexPage(EXTERNAL_TEMPLATE);
+	c_config			config(CONFIG_DIR);
 	CUser				user;
 	auto				action = ""s;
 	CMysql				db;
 	struct timeval		tv;
 	map<string,string>	mapResult;
 
-	{
-		MESSAGE_DEBUG("", action, __FILE__);
-	}
+	MESSAGE_DEBUG("", action, __FILE__);
 
 	signal(SIGSEGV, crash_handler);
 
 	gettimeofday(&tv, NULL);
-	srand(tv.tv_sec * tv.tv_usec * 100000);
+	srand(tv.tv_sec * tv.tv_usec * 100000);  /* Flawfinder: ignore */
 
 	try
 	{
@@ -48,7 +47,7 @@ int main()
 			throw CException("Template file was missing");
 		}
 
-		if(db.Connect() < 0)
+		if(db.Connect(&config) < 0)
 		{
 			MESSAGE_ERROR("", action, "Can not connect to mysql database");
 			throw CExceptionHTML("MySql connection");
@@ -314,7 +313,7 @@ int main()
 		{
 			ostringstream	ost, ostFinal;
 			string			sessidPersistence, userID, userList;
-			char			*remoteAddr = getenv("REMOTE_ADDR");
+			char			*remoteAddr = getenv("REMOTE_ADDR");   /* Flawfinder: ignore */
 
 			sessidPersistence = indexPage.GetVarsHandler()->Get("sessid");
 
@@ -323,7 +322,7 @@ int main()
 			mapResult["result"] = "error";
 			mapResult["sessionPersistence"] = "false";
 			mapResult["userPersistence"] = "false";
-			mapResult["redirect"] = "/" + GetDefaultActionFromUserType(&user, &db) + "?rand=" + GetRandom(10);
+			mapResult["redirect"] = "/" + config.GetFromFile("default_action", user.GetType()) + "?rand=" + GetRandom(10);
 
 			if(remoteAddr && (!isPersistenceRateLimited(remoteAddr, &db)))
 			{
@@ -377,7 +376,7 @@ int main()
 									// ---			3.b) within 30 seconds remove cookie and request "/" again
 									// ---			3.c) client browser will take  cached instance of "/" and will request "checkpersistence" only
 
-									MESSAGE_DEBUG("", action, "\"sessid\" cookie doesn't exists or expired, UA must be redirected to / page. This is AJAX request called from "s + (getenv("HTTP_REFERER") ? getenv("HTTP_REFERER") : "") + ". Supposed that parent script assign cookie:sessid, BUT cookie hasn't been assigned. Probably this script has been called from cached page or page opened in neighbour tab (check that parallel stream may exists with the same persistency key).");
+									MESSAGE_DEBUG("", action, "\"sessid\" cookie doesn't exists or expired, UA must be redirected to / page. This is AJAX request called from "s + (getenv("HTTP_REFERER") ? getenv("HTTP_REFERER") : "") + ". Supposed that parent script assign cookie:sessid, BUT cookie hasn't been assigned. Probably this script has been called from cached page or page opened in neighbour tab (check that parallel stream may exists with the same persistency key).");   /* Flawfinder: ignore */
 								}
 								else
 								{
@@ -429,7 +428,7 @@ int main()
 											db.Query("UPDATE `sessions` SET `previous_sessid`=\"" + sessidPersistence + "\"  WHERE `id`=\"" + indexPage.SessID_Get_FromHTTP() + "\";");
 										}
 
-										mapResult["redirect"] = "/" + GetDefaultActionFromUserType(&user, &db) + "?rand=" + GetRandom(10);
+										mapResult["redirect"] = "/" + config.GetFromFile("default_action", user.GetType()) + "?rand=" + GetRandom(10);
 
 										db.Query("UPDATE `sessions` SET `user_id`=\"" + persistedUserID + "\", expire=\"" + persistedExpire + "\" WHERE `id`=\"" + sessidHTTP + "\";");
 										if(db.isError())

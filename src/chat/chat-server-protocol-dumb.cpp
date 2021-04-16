@@ -25,7 +25,7 @@ int
 callback_lws_dumb_increment(struct lws *wsi, enum lws_callback_reasons reason,
 			void *user, void *in, size_t len)
 {
-	unsigned char buf[LWS_PRE + 512];
+	unsigned char buf[LWS_PRE + 512];    /* Flawfinder: ignore */
 	struct per_session_data__dumb_increment *pss =
 			(struct per_session_data__dumb_increment *)user;
 	unsigned char *p = &buf[LWS_PRE];
@@ -40,7 +40,7 @@ callback_lws_dumb_increment(struct lws *wsi, enum lws_callback_reasons reason,
 		break;
 
 	case LWS_CALLBACK_SERVER_WRITEABLE:
-		n = sprintf((char *)p, "[%d]", pss->number++);
+		n = sprintf((char *)p, "[%d]", pss->number++);    /* Flawfinder: ignore */
 		m = lws_write(wsi, p, n, LWS_WRITE_TEXT);
 		if (m < n) {
 			lwsl_err("ERROR %d writing to di socket\n", n);
@@ -60,7 +60,7 @@ callback_lws_dumb_increment(struct lws *wsi, enum lws_callback_reasons reason,
 		}
 		if (strchr((const char *)in, 'a') != NULL)
 		{
-			((char *)in)[len] = '\0';
+			((char *)in)[len] = '\0';    /* Flawfinder: ignore */
 			lwsl_notice("dumb_inc: junk %s\n", in);
 			
 		}
@@ -98,7 +98,7 @@ callback_lws_dumb_increment(struct lws *wsi, enum lws_callback_reasons reason,
 			    len);
 		for (n = 0; n < (int)len; n++)
 			lwsl_notice(" %d: 0x%02X\n", n,
-				    ((unsigned char *)in)[n]);
+				    ((unsigned char *)in)[n]);    /* Flawfinder: ignore */
 		break;
 
 	default:

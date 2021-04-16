@@ -4,7 +4,7 @@ extern	struct per_session_data__message	*connectionsList;
 extern	CPresenceCache						presenceCache;
 
 string			statusResult;
-char			server_info[1024];
+char			server_info[1024];    /* Flawfinder: ignore */
 
 string ClearConnectionID(long int cnxID)
 {
@@ -73,7 +73,7 @@ string GetConnectionStatus()
 	i=0;
 	while(connectionIterator)
 	{
-		char 			date[128];
+		char 			date[128];    /* Flawfinder: ignore */
 		time_t			t;
 		struct tm 		*ptm;
 		struct tm 		tm;
@@ -85,7 +85,7 @@ string GetConnectionStatus()
 		t = connectionIterator->tv_established.tv_sec;
 		ptm = &tm;
 		if (!localtime_r(&t, &tm))
-			strcpy(date, "unknown");
+			strcpy(date, "unknown");    /* Flawfinder: ignore */
 		else
 			strftime(date, sizeof(date), "%F %H:%M %Z", ptm);
 
@@ -242,7 +242,7 @@ callback_lws_status(struct lws *wsi, enum lws_callback_reasons reason,
 			// cache = (unsigned char *)malloc(statusResult.length() + 2 * LWS_PRE);
 			cache = tempSmartPointer.get();
 			memset(cache, 0, statusResult.length() + 2 * LWS_PRE + 1);
-			memcpy(cache + LWS_PRE, statusResult.c_str(), statusResult.length());
+			memcpy(cache + LWS_PRE, statusResult.c_str(), statusResult.length());    /* Flawfinder: ignore */
 
 			m = lws_write(wsi, (unsigned char *)cache + LWS_PRE, statusResult.length(),
 				      LWS_WRITE_TEXT);

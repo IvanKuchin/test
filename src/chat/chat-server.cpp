@@ -24,6 +24,7 @@
 
 CPresenceCache				presenceCache;
 CMysql						db;
+c_config					config(CONFIG_DIR);
 // --- by default MySQL connection expire in 8 hours idle. To avoid SQL connection drop
 // --- dbConnectionLifetime will reset connection each hour
 double						dbConnectionInitTimestamp = GetSecondsSinceY2k(); 
@@ -45,7 +46,7 @@ struct lws_context *context;
 #if defined(LWS_USE_MBEDTLS)
 #else
 #if defined(LWS_OPENSSL_SUPPORT) && defined(LWS_HAVE_SSL_CTX_set1_param)
-char crl_path[1024] = "";
+char crl_path[1024] = "";    /* Flawfinder: ignore */
 #endif
 #endif
 #endif
@@ -156,7 +157,7 @@ void *thread_dumb_increment(void *threadid)
 		lws_callback_on_writable_all_protocol(context,
 				&protocols[PROTOCOL_DUMB_INCREMENT]);
 		pthread_mutex_unlock(&lock_established_conns);
-		usleep(100000);
+		usleep(100000);    /* Flawfinder: ignore */
 	}
 
 	pthread_exit(NULL);
@@ -171,7 +172,7 @@ void
 dump_handshake_info(struct lws *wsi)
 {
 	int n = 0, len;
-	char buf[256];
+	char buf[256];    /* Flawfinder: ignore */
 	const unsigned char *c;
 
 	do {
@@ -282,7 +283,7 @@ static struct option options[] = {
 int main(int argc, char **argv)
 {
 	struct lws_context_creation_info info;
-	char interface_name[128] = "";
+	char interface_name[128] = "";    /* Flawfinder: ignore */
 	const char *iface = NULL;
 	pthread_t pthread_dumb, pthread_service[32];
 	// char cert_path[1024];
@@ -292,8 +293,8 @@ int main(int argc, char **argv)
 	void *retval;
 	int opts = 0;
 	int n = 0;
-	char	__certificate_path[128];
-	char	__private_key_path[128];
+	char	__certificate_path[128];    /* Flawfinder: ignore */
+	char	__private_key_path[128];    /* Flawfinder: ignore */
 #ifndef _WIN32
 	int syslog_options = LOG_PID | LOG_PERROR;
 #endif
@@ -313,12 +314,12 @@ int main(int argc, char **argv)
 	pthread_mutex_init(&lock_established_conns, NULL);
 
 	while (n >= 0) {
-		n = getopt_long(argc, argv, "eci:hsap:d:Dr:j:", options, NULL);
+		n = getopt_long(argc, argv, "eci:hsap:d:Dr:j:", options, NULL);     /* Flawfinder: ignore */
 		if (n < 0)
 			continue;
 		switch (n) {
 		case 'j':
-			threads = atoi(optarg);
+			threads = atoi(optarg);    /* Flawfinder: ignore */
 			if (threads > ARRAY_SIZE(pthread_service)) {
 				lwsl_err("Max threads %d\n",
 					 ARRAY_SIZE(pthread_service));
@@ -338,7 +339,7 @@ int main(int argc, char **argv)
 			break;
 #endif
 		case 'd':
-			debug_level = atoi(optarg);
+			debug_level = atoi(optarg);    /* Flawfinder: ignore */
 			break;
 		case 's':
 			use_ssl = 1;
@@ -346,10 +347,10 @@ int main(int argc, char **argv)
 			opts |= LWS_SERVER_OPTION_ALLOW_NON_SSL_ON_SSL_PORT;
 			break;
 		case 'p':
-			info.port = atoi(optarg);
+			info.port = atoi(optarg);    /* Flawfinder: ignore */
 			break;
 		case 'i':
-			strncpy(interface_name, optarg, sizeof interface_name);
+			strncpy(interface_name, optarg, sizeof interface_name - 1);    /* Flawfinder: ignore */
 			interface_name[(sizeof interface_name) - 1] = '\0';
 			iface = interface_name;
 			break;
@@ -385,7 +386,7 @@ int main(int argc, char **argv)
 #endif
 
 
-	if(db.Connect() < 0)
+	if(db.Connect(&config) < 0)
 	{
 		CLog	log(CHAT_LOG_FILE_NAME);
 
@@ -469,8 +470,8 @@ int main(int argc, char **argv)
 
 		opts |= LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
 
-		strcpy(__certificate_path, (CHAT_CERTIFICATE).c_str());
-		strcpy(__private_key_path, (CHAT_PRIVATE_KEY).c_str());
+		strncpy(__certificate_path, (CHAT_CERTIFICATE).c_str(), sizeof(__certificate_path) - 1);    /* Flawfinder: ignore */
+		strncpy(__private_key_path, (CHAT_PRIVATE_KEY).c_str(), sizeof(__private_key_path) - 1);    /* Flawfinder: ignore */
 
 		info.ssl_cert_filepath = __certificate_path;
 		info.ssl_private_key_filepath = __private_key_path;

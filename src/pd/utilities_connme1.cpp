@@ -3657,7 +3657,7 @@ string  GetUserNotificationInJSONFormat(string sqlRequest, CMysql *db, CUser *us
 			ostUserNotifications << "\"notificationActionID\":\"" << it.feed_actionId << "\",";
 			ostUserNotifications << "\"notificationStatus\":\"" << it.notificationStatus << "\"";
 
-			userNotificationEnrichment = GetUserNotificationSpecificDataByType(atol(it.feed_actionTypeId.c_str()), atol(it.feed_actionId.c_str()), db, user);
+			userNotificationEnrichment = GetUserNotificationSpecificDataByType(stol(it.feed_actionTypeId), stol(it.feed_actionId), db, user);
 			if(userNotificationEnrichment.length()) ostUserNotifications << "," << userNotificationEnrichment;
 
 			ostUserNotifications << "}";
@@ -3775,7 +3775,7 @@ auto RotateImage(string filename, int degree) -> string
 		Magick::Image		   image;
 
 		// Read a file into image object
-		image.read( filename );
+		image.read( filename );    /* Flawfinder: ignore */
 
 		image.rotate(degree);
 
@@ -3810,7 +3810,7 @@ auto FlipImageHorizontal(string filename) -> string
 		Magick::Image		   image;
 
 		// Read a file into image object
-		image.read( filename );
+		image.read( filename );    /* Flawfinder: ignore */
 
 		image.flop();
 
@@ -3845,7 +3845,7 @@ auto FlipImageVertical(string filename) -> string
 		Magick::Image		   image;
 
 		// Read a file into image object
-		image.read( filename );
+		image.read( filename );    /* Flawfinder: ignore */
 
 		image.flip();
 

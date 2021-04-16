@@ -1,7 +1,7 @@
 #include "index.h"
 
 // --- check that src image is actually image, resize it and save to dst
-bool ImageSaveAsJpgToFeedFolder (const string src, const string dst, struct ExifInfo &exifInfo)
+bool ImageSaveAsJpgToFeedFolder (const string src, const string dst, struct ExifInfo &exifInfo, c_config *config)
 {
 	MESSAGE_DEBUG("", "", "start (src = " + src + ", dst = " + dst + ")");
 
@@ -14,8 +14,11 @@ bool ImageSaveAsJpgToFeedFolder (const string src, const string dst, struct Exif
 		Magick::OrientationType imageOrientation;
 		Magick::Geometry		imageGeometry;
 
+		auto					image_max_width	= stod_noexcept(config->GetFromFile("image_max_width", "feed"));
+		auto					image_max_height = stod_noexcept(config->GetFromFile("image_max_height", "feed"));		
+
 		// Read a file into image object
-		image.read( src );
+		image.read( src );    /* Flawfinder: ignore */
 
 		imageGeometry = image.size();
 		imageOrientation = image.orientation();
@@ -30,17 +33,17 @@ bool ImageSaveAsJpgToFeedFolder (const string src, const string dst, struct Exif
 		if(imageOrientation == Magick::RightBottomOrientation) { image.flop(); image.rotate(90); }
 		if(imageOrientation == Magick::LeftBottomOrientation) image.rotate(-90);
 
-		if((imageGeometry.width() > FEED_IMAGE_MAX_WIDTH) || (imageGeometry.height() > FEED_IMAGE_MAX_HEIGHT))
+		if((imageGeometry.width() > image_max_width) || (imageGeometry.height() > image_max_height))
 		{
 			int   newHeight, newWidth;
 			if(imageGeometry.width() >= imageGeometry.height())
 			{
-				newWidth = FEED_IMAGE_MAX_WIDTH;
+				newWidth = image_max_width;
 				newHeight = newWidth * imageGeometry.height() / imageGeometry.width();
 			}
 			else
 			{
-				newHeight = FEED_IMAGE_MAX_HEIGHT;
+				newHeight = image_max_height;
 				newWidth = newHeight * imageGeometry.width() / imageGeometry.height();
 			}
 
@@ -217,7 +220,7 @@ string GenerateImage(string randStr)
 			{
 				bool 		fileFlagExist;
 
-				imageMaster.read(fileName);
+				imageMaster.read(fileName);    /* Flawfinder: ignore */
 				imageDest = imageMaster;
 				imageDest.fontPointsize(14);
 				imageDest.addNoise(Magick::GaussianNoise);
@@ -236,42 +239,29 @@ string GenerateImage(string randStr)
 					fileResult += ".gif";
 					fileResultFull = IMAGE_CAPTCHA_DIRECTORY;
 					fileResultFull += fileResult;
-					int fh = open(fileResultFull.c_str(), O_RDONLY);
+					auto fh = open(fileResultFull.c_str(), O_RDONLY);    /* Flawfinder: ignore */
 					if(fh < 0) 
 					{
 						fileFlagExist = false;
-						{
-							CLog	log;
-							log.Write(DEBUG, "GenerateImage: trying file ", fileResultFull, " -> can be used for writing");
-						}
+
+						MESSAGE_DEBUG("", "", "GenerateImage: trying file " + fileResultFull + " -> can be used for writing");
 					}
 					else 
 					{ 
 						close(fh); 
-						{
-							CLog	log;
-							log.Write(DEBUG, "GenerateImage: trying file ", fileResultFull, " -> can't be used, needs another one");
-						}
+
+						MESSAGE_DEBUG("", "", "GenerateImage: trying file " + fileResultFull + " -> can't be used, needs another one");
 					}
 				} while(fileFlagExist == true);
 
 
-				{
-					CLog	log;
-					log.Write(DEBUG, "GenerateImage: write captcha-image to ", fileResultFull);
-				}
-				imageDest.write(fileResultFull);
+				MESSAGE_DEBUG("", "", "GenerateImage: write captcha-image to " + fileResultFull);
 
+				imageDest.write(fileResultFull);
 			}
 			catch(Magick::Exception &error_)
 			{
-				CLog			log;
-				ostringstream	ost;
-
-				ost.str("");
-				ost << "GenerateImage(" << randStr << "): ERROR: Caught exception: " << error_.what();
-				log.Write(ERROR, ost.str());
-
+				MESSAGE_ERROR("", "", "Caught exception: " + error_.what())
 				fileResult = "";		
 			}
 		}
@@ -284,6 +274,7 @@ int main()
 	CStatistics		appStat;  // --- CStatistics must be a first statement to measure end2end param's
 	CCgi			indexPage(EXTERNAL_TEMPLATE);
 	CUser			user;
+	c_config		config(CONFIG_DIR);
 	string			action = "";
 	CMysql			db;
 	struct timespec	tv;
@@ -293,7 +284,7 @@ int main()
 	signal(SIGSEGV, crash_handler); 
 
 	timespec_get(&tv, TIME_UTC);
-	srand(tv.tv_nsec ^ tv.tv_sec);
+	srand(tv.tv_nsec ^ tv.tv_sec);    /* Flawfinder: ignore */
 
 	try
 	{
@@ -307,7 +298,7 @@ int main()
 			throw CException("Template file was missing");
 		}
 
-		if(db.Connect() < 0)
+		if(db.Connect(&config) < 0)
 		{
 			MESSAGE_ERROR("", action, "Can not connect to mysql database");
 			throw CExceptionHTML("MySql connection");
@@ -331,7 +322,7 @@ int main()
 				throw CExceptionHTML("environment variable error");
 			}
 
-			action = GenerateSession(action, &indexPage, &db, &user);
+			action = GenerateSession(action, &config, &indexPage, &db, &user);
 
 			//------- Cleanup data
 			db.Query("DELETE FROM `captcha` WHERE `timestamp`<=(NOW()-INTERVAL " + to_string(SESSION_LEN) + " MINUTE);");
@@ -499,8 +490,6 @@ int main()
 
 			if(strPageToGet.empty()) strPageToGet = "0";
 
-			MESSAGE_DEBUG("", action, "page " + strPageToGet + " requested");
-
 			try{
 				currPage = stoi(strPageToGet);
 			} catch(...) {
@@ -512,6 +501,8 @@ int main()
 			} catch(...) {
 				newsOnSinglePage = NEWS_ON_SINGLE_PAGE;
 			}
+
+			MESSAGE_DEBUG("", action, "page " + strPageToGet + " requested");
 
 			if(user.GetLogin() == "Guest")
 			{
@@ -527,17 +518,10 @@ int main()
 									"WHERE `users_friends`.`userID`='" + user.GetID() + "' and `users_friends`.`state`=\"confirmed\" and `users`.`isactivated`=\"Y\" and `users`.`isblocked`=\"N\";";
 				auto			vectorFriendList		= GetValuesFromDB(sql_query, &db);
 								vectorFriendList.push_back(user.GetID());
-				// auto			strFriendList			= join(vectorFriendList, ",");
-
+								
 				auto			companies_vector		= GetValuesFromDB("SELECT `id` FROM `company` WHERE `isBlocked`=\"N\" AND `id` IN (SELECT `entity_id` FROM `users_subscriptions` WHERE `user_id`=\"" + user.GetID() + "\" AND `entity_type`=\"company\");", &db);
-				// auto			strCompaniesList		= join(companies_vector, ",");
-
 				auto			groups_vector			= GetValuesFromDB("SELECT `id` FROM `groups` WHERE `isBlocked`=\"N\" AND `id` IN (SELECT `entity_id` FROM `users_subscriptions` WHERE `user_id`=\"" + user.GetID() + "\" AND `entity_type`=\"group\");", &db);
-				// auto			strGroupsList			= join(groups_vector, ",");
-
 				auto			companies_i_own_vector	= GetValuesFromDB("SELECT `id` FROM `company` WHERE `isBlocked`=\"N\" AND `admin_userID`=\"" + user.GetID() + "\";", &db);
-				// auto			companies_i_own_list	= join(companies_i_own_vector, ",");
-
 				auto			where_query				= 
 															"((`feed`.`userId` in (" + join(vectorFriendList, ",") + ")) AND (`feed`.`srcType` = \"user\") AND (`feed`.`dstType` = \"\"))"
 															+ (companies_vector.size() ? " OR ((`feed`.`userId` in (" + join(companies_vector, ",") + ")) AND (`feed`.`srcType` = \"company\"))" : "")
@@ -547,84 +531,7 @@ int main()
 									"\"my_companies\":[" + join(companies_i_own_vector, ",") + "],"
 									"\"feed\":[" + GetNewsFeedInJSONFormat(where_query, currPage, newsOnSinglePage, &user, &db) + "]"
 									;
-
-/*
-				// auto			affected = db.Query(sql_query);
-				for(auto i = 0; i < affected; i++)
-					vectorFriendList.push_back(db.Get(i, "friendID"));
-
-				ost.str("");
-				for(auto it = vectorFriendList.begin(); it != vectorFriendList.end(); ++it)
-				{
-					if(it != vectorFriendList.begin()) ost << ",";
-					ost << *it;
-				}
-				strFriendList = ost.str();
-
-				if(strFriendList.length() > 0) strFriendList += ",";
-				strFriendList += user.GetID();
-
-
-				// --- building subscription company list
-				{
-					auto	affected = db.Query("SELECT `id` FROM `company` WHERE `isBlocked`=\"N\" AND `id` IN (SELECT `entity_id` FROM `users_subscriptions` WHERE `user_id`=\"" + user.GetID() + "\" AND `entity_type`=\"company\");");
-
-					strCompaniesList = "";
-					for(auto i = 0; i < affected; i++)
-					{
-						if(strCompaniesList.length()) strCompaniesList += ",";
-						strCompaniesList += db.Get(i, "id");
-					}
-				}
-
-				// --- building subscription group list
-				{
-					auto	affected = db.Query("SELECT `id` FROM `groups` WHERE `isBlocked`=\"N\" AND `id` IN (SELECT `entity_id` FROM `users_subscriptions` WHERE `user_id`=\"" + user.GetID() + "\" AND `entity_type`=\"group\");");
-
-					strGroupsList = "";
-					for(auto i = 0; i < affected; i++)
-					{
-						if(strGroupsList.length()) strGroupsList += ",";
-						strGroupsList += db.Get(i, "id");
-					}
-				}
-
-				// --- building company owning list
-				{
-
-					auto	affected = db.Query("SELECT `id` FROM `company` WHERE `isBlocked`=\"N\" AND `admin_userID`=\"" + user.GetID() + "\";");
-
-
-					for(auto i = 0; i < affected; i++)
-					{
-						if(companies_i_own_list.length()) companies_i_own_list += ",";
-						companies_i_own_list += db.Get(i, "id");
-					}
-				}
-
-				whereQuery = "((`feed`.`userId` in (" + strFriendList + ")) AND (`feed`.`srcType` = \"user\") AND (`feed`.`dstType` = \"\"))";
-
-				if(strCompaniesList.length()) 
-					where_query += " OR ((`feed`.`userId` in (" + strCompaniesList + ")) AND (`feed`.`srcType` = \"company\"))";
-
-				if(strGroupsList.length())
-					where_query += " OR ((`feed`.`dstID` in (" + strGroupsList + ")) AND (`feed`.`dstType` = \"group\"))";
-
-				indexPage.RegisterVariableForce("result", "{"
-															"\"status\":\"success\","
-															"\"my_companies\":[" + join(companies_i_own_vector, ",") + "],"
-															"\"feed\":[" + GetNewsFeedInJSONFormat(where_query, currPage, newsOnSinglePage, &user, &db) + "]"
-															"}");
-*/
 			}
-/*
-			if(!indexPage.SetTemplate("json_response.htmlt"))
-			{
-				MESSAGE_ERROR("", action, "can't find template json_response.htmlt");
-				throw CExceptionHTML("user not activated");
-			}
-*/
-
 			AJAX_ResponseTemplate(&indexPage, success_message, error_message);
 		}
 
@@ -656,9 +563,7 @@ int main()
 				{
 					ostringstream	ost;
 
-					{
-						MESSAGE_DEBUG("", action, "re-login required");
-					}
+					MESSAGE_DEBUG("", action, "re-login required");
 
 					indexPage.Redirect("/autologin?rand=" + GetRandom(10));
 				}
@@ -706,10 +611,7 @@ int main()
 					}
 					else
 					{
-						{
-							CLog	log;
-							MESSAGE_ERROR("", action, "message owner error (type:" + messageOwnerType + ", id:" + messageOwnerID + ")");
-						}
+						MESSAGE_ERROR("", action, "message owner error (type:" + messageOwnerType + ", id:" + messageOwnerID + ")");
 
 						ostFinal.str("");
 						ostFinal << "{";
@@ -720,10 +622,7 @@ int main()
 				}
 				else
 				{
-					{
-						CLog	log;
-						MESSAGE_ERROR("", action, "message doesn't belongs to you");
-					}
+					MESSAGE_ERROR("", action, "message doesn't belongs to you");
 
 					ostFinal.str("");
 					ostFinal << "{";
@@ -777,9 +676,7 @@ int main()
 				{
 					ostringstream	ost;
 
-					{
-						MESSAGE_DEBUG("", action, "re-login required");
-					}
+					MESSAGE_DEBUG("", action, "re-login required");
 
 					indexPage.Redirect("/autologin?rand=" + GetRandom(10));
 				}
@@ -838,9 +735,7 @@ int main()
 				{
 					ostringstream	ost;
 
-					{
-						MESSAGE_DEBUG("", action, "re-login required");
-					}
+					MESSAGE_DEBUG("", action, "re-login required");
 
 					indexPage.Redirect("/autologin?rand=" + GetRandom(10));
 				}
@@ -912,9 +807,7 @@ int main()
 				{
 					ostringstream	ost;
 
-					{
-						MESSAGE_DEBUG("", action, "re-login required");
-					}
+					MESSAGE_DEBUG("", action, "re-login required");
 
 					indexPage.Redirect("/autologin?rand=" + GetRandom(10));
 				}
@@ -985,10 +878,8 @@ int main()
 				}
 				else
 				{
-					{
-						CLog	log;
-						MESSAGE_ERROR("", action, "openVacancyID[" + id + "] not found in DB");
-					}
+					MESSAGE_ERROR("", action, "openVacancyID[" + id + "] not found in DB");
+
 					ostResult << "{\"result\":\"error\",\"description\":\"Вакансия не найдена\"}";
 				}
 			}
@@ -1034,9 +925,7 @@ int main()
 				{
 					ostringstream	ost;
 
-					{
-						MESSAGE_DEBUG("", action, "re-login required");
-					}
+					MESSAGE_DEBUG("", action, "re-login required");
 
 					indexPage.Redirect("/autologin?rand=" + GetRandom(10));
 				}
@@ -1104,9 +993,7 @@ int main()
 				{
 					ostringstream	ost;
 
-					{
-						MESSAGE_DEBUG("", action, "re-login required");
-					}
+					MESSAGE_DEBUG("", action, "re-login required");
 
 					indexPage.Redirect("/autologin?rand=" + GetRandom(10));
 				}
@@ -1174,9 +1061,7 @@ int main()
 				{
 					ostringstream	ost;
 
-					{
-						MESSAGE_DEBUG("", action, "re-login required");
-					}
+					MESSAGE_DEBUG("", action, "re-login required");
 
 					indexPage.Redirect("/autologin?rand=" + GetRandom(10));
 				}
@@ -1250,9 +1135,7 @@ int main()
 				{
 					ostringstream	ost;
 
-					{
-						MESSAGE_DEBUG("", action, "re-login required");
-					}
+					MESSAGE_DEBUG("", action, "re-login required");
 
 					indexPage.Redirect("/autologin?rand=" + GetRandom(10));
 				}
@@ -1318,9 +1201,7 @@ int main()
 				{
 					ostringstream	ost;
 
-					{
-						MESSAGE_DEBUG("", action, "re-login required");
-					}
+					MESSAGE_DEBUG("", action, "re-login required");
 
 					indexPage.Redirect("/autologin?rand=" + GetRandom(10));
 				}
@@ -1412,9 +1293,7 @@ int main()
 				{
 					ostringstream   ost;
 
-					{
-						MESSAGE_DEBUG("", action, "re-login required");
-					}
+					MESSAGE_DEBUG("", action, "re-login required");
 
 					indexPage.Redirect("/autologin?rand=" + GetRandom(10));
 				}
@@ -1506,9 +1385,7 @@ int main()
 				{
 					ostringstream   ost;
 
-					{
-						MESSAGE_DEBUG("", action, "re-login required");
-					}
+					MESSAGE_DEBUG("", action, "re-login required");
 
 					indexPage.Redirect("/autologin?rand=" + GetRandom(10));
 				}
@@ -1598,9 +1475,7 @@ int main()
 				{
 					ostringstream	ost;
 
-					{
-						MESSAGE_DEBUG("", action, "re-login required");
-					}
+					MESSAGE_DEBUG("", action, "re-login required");
 
 					indexPage.Redirect("/autologin?rand=" + GetRandom(10));
 				}
@@ -1677,9 +1552,7 @@ int main()
 				{
 					ostringstream	ost;
 
-					{
-						MESSAGE_DEBUG("", action, "re-login required");
-					}
+					MESSAGE_DEBUG("", action, "re-login required");
 
 					indexPage.Redirect("/autologin?rand=" + GetRandom(10));
 				}
@@ -1724,10 +1597,7 @@ int main()
 						ostFinal.str("");
 						ostFinal << "{ \"result\":\"error\", \"description\":\"ERROR inserting into DB `feed`\" }";
 
-						{
-							CLog	log;
-							MESSAGE_ERROR("", action, "inserting into `feed`");
-						}
+						MESSAGE_ERROR("", action, "inserting into `feed`");
 					}
 				}
 				else
@@ -2066,37 +1936,33 @@ int main()
 					MESSAGE_ERROR("", action, "imageTempSet is empty");
 
 					ostFinal.str("");
-					ostFinal << "{" << std::endl;
-					ostFinal << "\"result\" : \"error\"," << std::endl;
-					ostFinal << "\"description\" : \"проблема с выбором imageTempSet\"" << std::endl;
-					ostFinal << "}" << std::endl;
+					ostFinal << "{"
+								"\"result\" : \"error\","
+								"\"description\" : \"проблема с выбором imageTempSet\""
+								"}";
 				}
 				else
 				{
 					MESSAGE_DEBUG("", action, "url is empty OR too long OR imageTempSet is empty");
 
 					ostFinal.str("");
-					ostFinal << "{" << std::endl;
-					ostFinal << "\"result\" : \"error\"," << std::endl;
-					ostFinal << "\"description\" : \"ссылка пустая или слишком длинная\"" << std::endl;
-					ostFinal << "}" << std::endl;
+					ostFinal << "{"
+								"\"result\" : \"error\","
+								"\"description\" : \"ссылка пустая или слишком длинная\""
+								"}";
 				}
 			}
 			else
 			{
 				if(user.GetLogin() == "Guest")
 				{
-					ostringstream	ost;
-
-					{
-						MESSAGE_DEBUG("", action, "re-login required");
-					}
+					MESSAGE_DEBUG("", action, "re-login required");
 
 					ostFinal.str("");
-					ostFinal << "{" << std::endl;
-					ostFinal << "\"result\" : \"error\"," << std::endl;
-					ostFinal << "\"description\" : \"Ваша сессия истекла. Необходимо выйти и повторно зайти.\"" << std::endl;
-					ostFinal << "}" << std::endl;
+					ostFinal << "{"
+								"\"result\" : \"error\","
+								"\"description\" : \"Ваша сессия истекла. Необходимо выйти и повторно зайти.\""
+								"}";
 				}
 
 
@@ -2114,10 +1980,7 @@ int main()
 						{
 							ostringstream   ost;
 
-							{
-								CLog log;
-								MESSAGE_DEBUG("", action, "youtube video found");
-							}
+							MESSAGE_DEBUG("", action, "youtube video found");
 
 							ost.str("");
 							ost << "INSERT INTO `feed_images` set "
@@ -2140,10 +2003,7 @@ int main()
 							string			finalFile, tmpFile2Check, tmpImageJPG;
 							ostringstream	ost;
 
-							{
-								CLog log;
-								MESSAGE_DEBUG("", action, "preview image found");
-							}
+							MESSAGE_DEBUG("", action, "preview image found");
 
 #ifndef IMAGEMAGICK_DISABLE
 							Magick::InitializeMagick(NULL);
@@ -2161,7 +2021,7 @@ int main()
 							ost << "/tmp/" << html.GetPreviewImagePrefix() << ".jpg";
 							tmpImageJPG = ost.str();
 
-							if(ImageSaveAsJpgToFeedFolder(tmpFile2Check, tmpImageJPG, exifInfo))
+							if(ImageSaveAsJpgToFeedFolder(tmpFile2Check, tmpImageJPG, exifInfo, &config))
 							{
 
 								MESSAGE_DEBUG("", action, "chosen filename for feed image [" + finalFile + "]");
@@ -2237,10 +2097,7 @@ int main()
 								}
 								else
 								{
-									{
-										CLog	log;
-										MESSAGE_ERROR("", action, "inserting image info into feed_images table");
-									}
+									MESSAGE_ERROR("", action, "inserting image info into feed_images table");
 								}
 
 								// --- Delete temporarily files
@@ -2249,15 +2106,11 @@ int main()
 							}
 							else
 							{
-								{
-									CLog			log;
-									MESSAGE_ERROR("", action, "image [" + tmpFile2Check + "] is not valid image format (looks like attack)");
-								}
+								MESSAGE_ERROR("", action, "image [" + tmpFile2Check + "] is not valid image format (looks like attack)");
 							}
 						}
 						else
 						{
-							CLog log;
 							MESSAGE_DEBUG("", action, "there are no (youtube_video, preview image)");
 						}
 						ostFinal.str("");
@@ -2272,10 +2125,7 @@ int main()
 					}
 					else
 					{
-						{
-							CLog	log;
-							MESSAGE_DEBUG("", action, "can't perform request" + string(url));
-						}
+						MESSAGE_DEBUG("", action, "can't perform request" + string(url));
 
 						ostFinal.str("");
 						ostFinal << "{" << std::endl;
@@ -2325,17 +2175,9 @@ int main()
 			{
 				if(db.Get(0, "userid") == user.GetID())
 				{
-					string filename;
+					auto	filename = config.GetFromFile("image_folders", "avatar") + "/avatars"+ db.Get(0, "folder") + "/" + db.Get(0, "filename");
 
-					filename += IMAGE_AVATAR_DIRECTORY;
-					filename += "/avatars";
-					filename += db.Get(0, "folder");
-					filename += "/";
-					filename += db.Get(0, "filename");
-
-					{
-						MESSAGE_DEBUG("", action, "removing avatar [id=" + avatarID + "] belongs to user " + user.GetLogin() + " [filename=" + filename + "]");
-					}
+					MESSAGE_DEBUG("", action, "removing avatar [id=" + avatarID + "] belongs to user " + user.GetLogin() + " [filename=" + filename + "]");
 
 					ost.str("");
 					ost << "DELETE FROM `users_avatars` WHERE `id`=\"" << avatarID << "\";";
@@ -2358,10 +2200,7 @@ int main()
 							result.str("");
 							result << "{ \"result\":\"error\", \"description\":\"ERROR inserting into DB `feed`\" }";
 
-							{
-								CLog	log;
-								MESSAGE_ERROR("", action, "inserting into `feed` (" + ost.str() + ")");
-							}
+							MESSAGE_ERROR("", action, "inserting into `feed` (" + ost.str() + ")");
 						}
 					}
 					else
@@ -2369,10 +2208,7 @@ int main()
 						result.str("");
 						result << "{ \"result\":\"error\", \"description\":\"ERROR file is not exists\" }";
 
-						{
-							CLog	log;
-							MESSAGE_ERROR("", action, "file is not exists  [filename=" + filename + "] belongs to user " + user.GetLogin());
-						}
+						MESSAGE_ERROR("", action, "file is not exists  [filename=" + filename + "] belongs to user " + user.GetLogin());
 					}
 				}
 				else
@@ -2380,10 +2216,7 @@ int main()
 					result.str("");
 					result << "{ \"result\":\"error\", \"description\":\"avatar do not belongs to you\" }";
 						
-					{
-						CLog	log;
-						MESSAGE_ERROR("", action, "avatar [id=" + avatarID + "] do not belongs to user " + user.GetLogin());
-					}
+					MESSAGE_ERROR("", action, "avatar [id=" + avatarID + "] do not belongs to user " + user.GetLogin());
 				}
 			}
 			else
@@ -2391,12 +2224,7 @@ int main()
 				result.str("");
 				result << "{ \"result\":\"error\", \"description\":\"there is no avatar\" }";
 
-				{
-					CLog	log;
-
-					ost.str("");
-					MESSAGE_DEBUG("", action, "there is no avatar [id=" + avatarID + "]");
-				}
+				MESSAGE_DEBUG("", action, "there is no avatar [id=" + avatarID + "]");
 			}
 
 			indexPage.RegisterVariableForce("result", result.str());
@@ -2541,14 +2369,10 @@ int main()
 				indexPage.Redirect("/autologin?rand=" + GetRandom(10));
 			}
 
-			ost.str("");
-			ost << "update `users` set `isblocked`='Y' WHERE `id`='" << user.GetID() << "';";
-			db.Query(ost.str());
-			ost.str("");
-			ost << "SELECT `isblocked` FROM `users` WHERE `id`='" << user.GetID() << "';";
-			if(db.Query(ost.str()))
+			db.Query("update `users` set `isblocked`='Y' WHERE `id`='" + user.GetID() + "';");
+			if(db.Query("SELECT `isblocked` FROM `users` WHERE `id`='" + user.GetID() + "';"))
 			{
-				string	blockStatus = db.Get(0, "isblocked");
+				auto	blockStatus = db.Get(0, "isblocked");
 
 				if(blockStatus == "Y")
 				{
@@ -2562,10 +2386,7 @@ int main()
 					}
 					else
 					{
-						{
-							CLog			log;
-							MESSAGE_ERROR("", action, "inserting into `feed` (" + ost.str() + ")");
-						}
+						MESSAGE_ERROR("", action, "inserting into `feed` (" + ost.str() + ")");
 					}
 		
 					result.str("");
@@ -2573,32 +2394,21 @@ int main()
 				}
 				else
 				{
-					ostringstream	ost2;
-					ost2.str("");
-					ost2 << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": userID [" << user.GetID() << "] can't block";
+					MESSAGE_ERROR("", "", "userID [" + user.GetID() + "] can't block");
+
 
 					result.str("");
 					result << "{ \"result\":\"error\", \"description\":\"userID [" << user.GetID() << "] can't block\" }";
-
-					{
-						CLog	log;
-						log.Write(ERROR, ost2.str());
-					} // CLog
 				}
 			}
 			else
 			{
-				ostringstream	ost2;
-				ost2.str("");
-				ost2 << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": userID [" << user.GetID() << "] has not been found";
+				MESSAGE_ERROR("", "", "userID [" + user.GetID() + "] has not been found");
+
 
 				result.str("");
 				result << "{ \"result\":\"error\", \"description\":\"userID [" << user.GetID() << "] has not been found\" }";
 
-				{
-					CLog	log;
-					log.Write(ERROR, ost2.str());
-				} // CLog
 			}
 
 			indexPage.RegisterVariableForce("result", result.str());
@@ -2646,10 +2456,7 @@ int main()
 					}
 					else
 					{
-						{
-							CLog			log;
-							MESSAGE_ERROR("", action, "inserting into `feed` (" + ost.str() + ")");
-						}
+						MESSAGE_ERROR("", action, "inserting into `feed` (" + ost.str() + ")");
 					}
 		
 					result.str("");
@@ -2657,32 +2464,18 @@ int main()
 				}
 				else
 				{
-					ostringstream	ost2;
-					ost2.str("");
-					ost2 << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": userID [" << user.GetID() << "] can't enable";
+					MESSAGE_ERROR("", "", "userID [" + user.GetID() + "] can't enable");
 
 					result.str("");
 					result << "{ \"result\":\"error\", \"description\":\"userID [" << user.GetID() << "] can't enable\" }";
-
-					{
-						CLog	log;
-						log.Write(ERROR, ost2.str());
-					} // CLog
 				}
 			}
 			else
 			{
-				ostringstream	ost2;
-				ost2.str("");
-				ost2 << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": userID [" << user.GetID() << "] has not been found";
+				MESSAGE_ERROR("", "", "userID [" + user.GetID() + "] has not been found");
 
 				result.str("");
 				result << "{ \"result\":\"error\", \"description\":\"userID [" << user.GetID() << "] has not been found\" }";
-
-				{
-					CLog	log;
-					log.Write(ERROR, ost2.str());
-				} // CLog
 			}
 
 			indexPage.RegisterVariableForce("result", result.str());
@@ -2766,7 +2559,6 @@ int main()
 								}
 								else
 								{
-									CLog	log;
 									MESSAGE_ERROR("", action, "unknown company.id(" + srcID + ") or blocked");
 								}
 							}
@@ -2778,13 +2570,11 @@ int main()
 								}
 								else
 								{
-									CLog	log;
 									MESSAGE_ERROR("", action, "unknown group.id(" + srcID + ") or blocked");
 								}
 							}
 							else
 							{
-								CLog	log;
 								MESSAGE_ERROR("", action, "unknown srcType(" + srcType + ")");
 							}
 						}
@@ -2811,17 +2601,12 @@ int main()
 							}
 							else
 							{
-								CLog	log;
 								MESSAGE_ERROR("", action, "inserting into users_notification table");
 							}
 						}
 						else
 						{
-							{
-								CLog	log;
-								MESSAGE_ERROR("", action, "can't find \"liked message\" owner");
-							}
-							
+							MESSAGE_ERROR("", action, "can't find \"liked message\" owner");
 						}
 					}
 					else
@@ -2829,10 +2614,7 @@ int main()
 						isSuccess = false;
 						failReason = "inserting into feed_message_params table";
 
-						{
-							CLog	log;
-							MESSAGE_ERROR("", action, "inserting into feed_message_params table");
-						}
+						MESSAGE_ERROR("", action, "inserting into feed_message_params table");
 					}
 				}
 
@@ -2882,10 +2664,7 @@ int main()
 			else
 			{
 				// --- message ID is not number
-				{
-					CLog	log;
-					log.Write(ERROR, string(__func__) + "[" + to_string(__LINE__) + "] messageID[" + indexPage.GetVarsHandler()->Get("messageId") + "] is empty");
-				}
+				MESSAGE_ERROR("", "", "messageID[" + indexPage.GetVarsHandler()->Get("messageId") + "] is empty")
 
 				ostFinal.str("");
 				ostFinal << "{";
@@ -2946,7 +2725,7 @@ int main()
 						{
 							vectorFriendList1.push_back(stoi(db.Get(i, "friendID")));
 
-							if(atoi(user2.c_str()) == stoi(db.Get(i, "friendID")))
+							if(user2 == db.Get(i, "friendID"))
 							{
 								handshakeUserStatus = "directFriends";
 							}
@@ -3071,11 +2850,9 @@ int main()
 				indexPage.Redirect("/autologin?rand=" + GetRandom(10));
 			}
 
-			if(db1.Connect() < 0)
+			if(db1.Connect(&config) < 0)
 			{
-				CLog	log;
-		
-				log.Write(ERROR, "Can not connect to mysql database");
+				MESSAGE_ERROR("", "", "Can not connect to mysql database");
 				return(1);
 			}
 
@@ -3209,18 +2986,12 @@ int main()
 				}
 				else
 				{
-					CLog	log;
-
 					MESSAGE_DEBUG("", action, "certification title new (no vendor)");
 				}
 			}
 			else
 			{
-				{
-					CLog	log;
-					// --- Just for testing purposes, later must be converted to DEBUG
-					MESSAGE_ERROR("", action, "certification title is empty");
-				}
+				MESSAGE_ERROR("", action, "certification title is empty");
 			}
 
 			ostFinal.str("");
@@ -3258,18 +3029,12 @@ int main()
 				}
 				else
 				{
-					CLog	log;
-
 					MESSAGE_DEBUG("", action, "course title new (no vendor)");
 				}
 			}
 			else
 			{
-				{
-					CLog	log;
-					// --- Just for testing purposes, later must be converted to DEBUG
-					MESSAGE_ERROR("", action, "course title is empty");
-				}
+				MESSAGE_ERROR("", action, "course title is empty");
 			}
 
 			ostFinal.str("");
@@ -3341,10 +3106,7 @@ int main()
 								}
 								else
 								{
-									{
-										CLog			log;
-										MESSAGE_ERROR("", action, "inserting into `feed` (" + ost.str() + ")");
-									}
+									MESSAGE_ERROR("", action, "inserting into `feed` (" + ost.str() + ")");
 								}
 
 								ostResult << "{\"result\": \"success\", \"id\": \"" << newFounderID << "\"}";
@@ -3352,10 +3114,7 @@ int main()
 							}
 							else
 							{
-								{
-									CLog	log;
-									MESSAGE_DEBUG("", action, "insertion into company_founder");
-								}
+								MESSAGE_DEBUG("", action, "insertion into company_founder");
 
 								ostResult << "{\"result\": \"error\", \"description\": \"ERROR: insertion into company_founder\"}";
 							}
@@ -3371,24 +3130,14 @@ int main()
 					}
 					else
 					{
-						{
-							CLog	log;
-							MESSAGE_ERROR("", action, "company doesn't belongs to you");
-						}
+						MESSAGE_ERROR("", action, "company doesn't belongs to you");
 
 						ostResult << "{\"result\": \"error\", \"description\": \"Вы не можете редактировать данные компании\"}";
 					}
 				}
 				else
 				{
-					{
-						CLog	log;
-						ostringstream   ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": mandatory parameter missed or empty in HTML request [userName, userID]";
-						log.Write(ERROR, ost.str());
-					}
+					MESSAGE_ERROR("", "", "mandatory parameter missed or empty in HTML request [userName, userID]");
 
 					ostResult << "{\"result\": \"error\", \"description\": \"any mandatory parameter missed\"}";
 				}
@@ -3462,10 +3211,7 @@ int main()
 								}
 								else
 								{
-									{
-										CLog			log;
-										MESSAGE_ERROR("", action, "inserting into `feed` (" + ost.str() + ")");
-									}
+									MESSAGE_ERROR("", action, "inserting into `feed` (" + ost.str() + ")");
 								}
 
 								ostResult << "{\"result\": \"success\", \"id\": \"" << newOwnerID << "\"}";
@@ -3473,10 +3219,7 @@ int main()
 							}
 							else
 							{
-								{
-									CLog	log;
-									MESSAGE_DEBUG("", action, "insertion into company_owner");
-								}
+								MESSAGE_DEBUG("", action, "insertion into company_owner");
 
 								ostResult << "{\"result\": \"error\", \"description\": \"ERROR: insertion into company_owner\"}";
 							}
@@ -3492,24 +3235,14 @@ int main()
 					}
 					else
 					{
-						{
-							CLog	log;
-							MESSAGE_ERROR("", action, "company doesn't belongs to you");
-						}
+						MESSAGE_ERROR("", action, "company doesn't belongs to you");
 
 						ostResult << "{\"result\": \"error\", \"description\": \"ERROR: company doesn't belongs to you\"}";
 					}
 				}
 				else
 				{
-					{
-						CLog	log;
-						ostringstream   ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": mandatory parameter missed or empty in HTML request [userName, userID]";
-						log.Write(ERROR, ost.str());
-					}
+					MESSAGE_ERROR("", "", "mandatory parameter missed or empty in HTML request [userName, userID]");
 
 					ostResult << "{\"result\": \"error\", \"description\": \"any mandatory parameter missed\"}";
 				}
@@ -3585,10 +3318,7 @@ int main()
 								}
 								else
 								{
-									{
-										CLog			log;
-										MESSAGE_ERROR("", action, "inserting into `feed` (" + ost.str() + ")");
-									}
+									MESSAGE_ERROR("", action, "inserting into `feed` (" + ost.str() + ")");
 								}
 
 								ostResult << "{\"result\": \"success\", \"company_industry_ref_id\": \"" << newCompanyIndustryRef << "\"}";
@@ -3596,10 +3326,7 @@ int main()
 							}
 							else
 							{
-								{
-									CLog	log;
-									MESSAGE_DEBUG("", action, "insertion into company_owner");
-								}
+								MESSAGE_DEBUG("", action, "insertion into company_owner");
 
 								ostResult << "{\"result\": \"error\", \"description\": \"ERROR: insertion into company_owner\"}";
 							}
@@ -3615,24 +3342,14 @@ int main()
 					}
 					else
 					{
-						{
-							CLog	log;
-							MESSAGE_ERROR("", action, "company doesn't belongs to you");
-						}
+						MESSAGE_ERROR("", action, "company doesn't belongs to you");
 
 						ostResult << "{\"result\": \"error\", \"description\": \"ERROR: company doesn't belongs to you\"}";
 					}
 				}
 				else
 				{
-					{
-						CLog	log;
-						ostringstream   ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": mandatory parameter missed or empty in HTML request [industryTitle, industryID]";
-						log.Write(ERROR, ost.str());
-					}
+					MESSAGE_ERROR("", "", "mandatory parameter missed or empty in HTML request [industryTitle, industryID]");
 
 					ostResult << "{\"result\": \"error\", \"description\": \"any mandatory parameter missed\"}";
 				}
@@ -3685,34 +3402,21 @@ int main()
 						}
 						else
 						{
-							{
-								CLog	log;
-								MESSAGE_ERROR("", action, "updating news_feed");
-							}
+							MESSAGE_ERROR("", action, "updating news_feed");
 						}
 
 						ostResult << "{\"result\": \"success\"}";
 					}
 					else
 					{
-						{
-							CLog	log;
-							MESSAGE_ERROR("", action, "company doesn't belongs to you");
-						}
+						MESSAGE_ERROR("", action, "company doesn't belongs to you");
 
 						ostResult << "{\"result\": \"error\", \"description\": \"ERROR: company doesn't belongs to you\"}";
 					}
 				}
 				else
 				{
-					{
-						CLog	log;
-						ostringstream   ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": mandatory parameter missed or empty in HTML request [companyDescription, industryID]";
-						log.Write(ERROR, ost.str());
-					}
+					MESSAGE_ERROR("", "", "mandatory parameter missed or empty in HTML request [companyDescription, industryID]");
 
 					ostResult << "{\"result\": \"error\", \"description\": \"any mandatory parameter missed\"}";
 				}
@@ -3756,10 +3460,7 @@ int main()
 
 					if(value.length() < 10)
 					{
-						{
-							CLog			log;
-							MESSAGE_DEBUG("", action, "link[" + value + "] is too short, must be longer than 10 symbols");
-						}
+						MESSAGE_DEBUG("", action, "link[" + value + "] is too short, must be longer than 10 symbols");
 
 						ostFinal.str("");
 						ostFinal << "{";
@@ -3770,10 +3471,7 @@ int main()
 					}
 					else if(value.find_first_not_of("abcdefghijklmnopqrstuvwxyz_-1234567890") != string::npos)
 					{
-						{
-							CLog			log;
-							MESSAGE_DEBUG("", action, "link[" + value + "] contains prohibited symbols");
-						}
+						MESSAGE_DEBUG("", action, "link[" + value + "] contains prohibited symbols");
 
 						ostFinal.str("");
 						ostFinal << "{";
@@ -3796,11 +3494,7 @@ int main()
 						}
 						else
 						{
-
-							{
-								CLog			log;
-								MESSAGE_ERROR("", action, "updating DB");
-							}
+							MESSAGE_ERROR("", action, "updating DB");
 
 							ostFinal.str("");
 							ostFinal << "{";
@@ -3813,10 +3507,7 @@ int main()
 				}
 				else
 				{
-					{
-						CLog			log;
-						MESSAGE_ERROR("", action, "user.id(" + user.GetID() + ") is not a company(" + id + ") owner");
-					}
+					MESSAGE_ERROR("", action, "user.id(" + user.GetID() + ") is not a company(" + id + ") owner");
 
 					ostFinal.str("");
 					ostFinal << "{";
@@ -3827,11 +3518,7 @@ int main()
 			}
 			else
 			{
-				ostringstream	ost;
-				{
-					CLog	log;
-					log.Write(ERROR, string(__func__) + "[" + to_string(__LINE__) + "]" + action + ": id(" + id + ") or value(" + value + ") is empty");
-				}
+				MESSAGE_ERROR("", action, "id(" + id + ") or value(" + value + ") is empty")
 
 				ostFinal.str("");
 				ostFinal << "{";
@@ -3902,30 +3589,21 @@ int main()
 						}
 						else
 						{
-							{
-								CLog	log;
-								MESSAGE_ERROR("", action, "updating news_feed");
-							}
+							MESSAGE_ERROR("", action, "updating news_feed");
 						}
 
 						ostResult << "{\"result\": \"success\"}";
 					}
 					else
 					{
-						{
-							CLog	log;
-							MESSAGE_ERROR("", action, "company doesn't belongs to you");
-						}
+						MESSAGE_ERROR("", action, "company doesn't belongs to you");
 
 						ostResult << "{\"result\": \"error\", \"description\": \"ERROR: company doesn't belongs to you\"}";
 					}
 				}
 				else
 				{
-					{
-						CLog	log;
-						MESSAGE_ERROR("", action, "mandatory parameter missed or empty in HTML request [companyWebsite, companyID]");
-					}
+					MESSAGE_ERROR("", action, "mandatory parameter missed or empty in HTML request [companyWebsite, companyID]");
 
 					ostResult << "{\"result\": \"error\", \"description\": \"mandatory parameter missed\"}";
 				}
@@ -3979,34 +3657,21 @@ int main()
 						}
 						else
 						{
-							{
-								CLog	log;
-								MESSAGE_ERROR("", action, "updating news_feed");
-							}
+							MESSAGE_ERROR("", action, "updating news_feed");
 						}
 
 						ostResult << "{\"result\": \"success\"}";
 					}
 					else
 					{
-						{
-							CLog	log;
-							MESSAGE_ERROR("", action, "company doesn't belongs to you");
-						}
+						MESSAGE_ERROR("", action, "company doesn't belongs to you");
 
 						ostResult << "{\"result\": \"error\", \"description\": \"ERROR: company doesn't belongs to you\"}";
 					}
 				}
 				else
 				{
-					{
-						CLog	log;
-						ostringstream   ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": mandatory parameter missed or empty in HTML request [employeeNumber, industryID]";
-						log.Write(ERROR, ost.str());
-					}
+					MESSAGE_ERROR("", "", "mandatory parameter missed or empty in HTML request [employeeNumber, industryID]");
 
 					ostResult << "{\"result\": \"error\", \"description\": \"any mandatory parameter missed\"}";
 				}
@@ -4060,34 +3725,21 @@ int main()
 						}
 						else
 						{
-							{
-								CLog	log;
-								MESSAGE_ERROR("", action, "updating news_feed");
-							}
+							MESSAGE_ERROR("", action, "updating news_feed");
 						}
 
 						ostResult << "{\"result\": \"success\"}";
 					}
 					else
 					{
-						{
-							CLog	log;
-							MESSAGE_ERROR("", action, "company doesn't belongs to you");
-						}
+						MESSAGE_ERROR("", action, "company doesn't belongs to you");
 
 						ostResult << "{\"result\": \"error\", \"description\": \"ERROR: company doesn't belongs to you\"}";
 					}
 				}
 				else
 				{
-					{
-						CLog	log;
-						ostringstream   ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": mandatory parameter missed or empty in HTML request [foundationDate, industryID]";
-						log.Write(ERROR, ost.str());
-					}
+					MESSAGE_ERROR("", "", "mandatory parameter missed or empty in HTML request [foundationDate, industryID]");
 
 					ostResult << "{\"result\": \"error\", \"description\": \"any mandatory parameter missed\"}";
 				}
@@ -4142,34 +3794,21 @@ int main()
 						}
 						else
 						{
-							{
-								CLog	log;
-								MESSAGE_ERROR("", action, "updating news_feed");
-							}
+							MESSAGE_ERROR("", action, "updating news_feed");
 						}
 
 						ostResult << "{\"result\": \"success\"}";
 					}
 					else
 					{
-						{
-							CLog	log;
-							MESSAGE_ERROR("", action, "company doesn't belongs to you");
-						}
+						MESSAGE_ERROR("", action, "company doesn't belongs to you");
 
 						ostResult << "{\"result\": \"error\", \"description\": \"ERROR: company doesn't belongs to you\"}";
 					}
 				}
 				else
 				{
-					{
-						CLog	log;
-						ostringstream   ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": mandatory parameter missed or empty in HTML request [companyType, industryID]";
-						log.Write(ERROR, ost.str());
-					}
+					MESSAGE_ERROR("", "", "mandatory parameter missed or empty in HTML request [companyType, industryID]");
 
 					ostResult << "{\"result\": \"error\", \"description\": \"any mandatory parameter missed\"}";
 				}
@@ -4203,11 +3842,10 @@ int main()
 				indexPage.Redirect("/autologin?rand=" + GetRandom(10));
 			}
 
-			if(db1.Connect() < 0)
+			if(db1.Connect(&config) < 0)
 			{
-				CLog	log;
-		
-				log.Write(ERROR, "Can not connect to mysql database");
+				MESSAGE_ERROR("", "", "Can not connect to mysql database");
+
 				return(1);
 			}
 
@@ -4356,12 +3994,8 @@ int main()
 			else
 			{
 				ostResult << "{ \"result\": \"fail\", \"description\": \"error receiving CV FROM DB\" }";
-				{
-					CLog	log;
 
-					ost.str("");
-					MESSAGE_DEBUG("", action, "issue in getting users(" + user.GetLogin() + ") CV");
-				}
+				MESSAGE_DEBUG("", action, "issue in getting users(" + user.GetLogin() + ") CV");
 			}
 
 			indexPage.RegisterVariableForce("result", ostResult.str());
@@ -4401,10 +4035,8 @@ int main()
 				try {
 					messageID = to_string(stol(messageID));
 				} catch(...) {
-					{
-						CLog log;
-						MESSAGE_ERROR("", action, "can't convert messageID[" + messageID + "] to number");
-					}
+					MESSAGE_ERROR("", action, "can't convert messageID[" + messageID + "] to number");
+
 					messageID = "";
 				}
 
@@ -4485,142 +4117,6 @@ int main()
 
 			MESSAGE_DEBUG("", action, "finish");
 		}
-/*
-		if(action == "AJAX_chatPostMessage")
-		{
-			ostringstream	ost, ostFinal;
-			string			sessid, message = "", toID = "";
-
-			MESSAGE_DEBUG("", action, "start");
-
-			if(user.GetLogin() == "Guest")
-			{
-				MESSAGE_DEBUG("", action, "re-login required");
-
-				ostFinal << "result: fail";
-			}
-			else
-			{
-				message = CheckHTTPParam_Text(indexPage.GetVarsHandler()->Get("message"));
-				toID	= CheckHTTPParam_Number(indexPage.GetVarsHandler()->Get("toID"));
-				
-
-				MESSAGE_DEBUG("", action, "message [" + message + "]");
-
-				if(message.length() && toID.length())
-				{
-					int				affected;
-					
-					ost.str("");
-					ost << "INSERT INTO `chat_messages` (`message`, `fromType`, `fromID`, `toType`, `toID`, `messageStatus`, `eventTimestamp`) \
-							VALUES (\
-							\"" << message << "\", \
-							\"fromUser\", \
-							\"" << user.GetID() << "\", \
-							\"toUser\", \
-							\"" << toID << "\", \
-							\"unread\", \
-							NOW() \
-							);";
-
-					db.Query(ost.str());
-
-					ost.str("");
-					ost << "SELECT * FROM `chat_messages` WHERE `fromID`='" << user.GetID() << "' and `toID`='" << toID << "' and `messageStatus`='unread' ORDER BY `id` DESC LIMIT 0,1;";
-					affected = db.Query(ost.str());
-					if(affected)
-					{
-						string		tempMessage = db.Get(0, "message");
-
-						if(tempMessage == message)
-						{
-							ostringstream	chatMessageQuery;
-							string			messageObj;
-
-							chatMessageQuery.str("");
-							chatMessageQuery << "SELECT * FROM `chat_messages` WHERE `id`='" << db.Get(0, "id") << "';";
-							messageObj = GetChatMessagesInJSONFormat(chatMessageQuery.str(), &db);
-
-							if(messageObj.length())
-							{
-								ostFinal.str("");
-								ostFinal << "\"result\": \"success\"," << std::endl;
-								ostFinal << "\"messageObj\": " << messageObj << std::endl;
-
-							}
-							else
-							{
-								{
-									CLog			log;
-									ostringstream	ost;
-
-									ost.str("");
-									ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": in getting chat message by ID FROM DB (" << db.Get(0, "id") << ")";
-									log.Write(ERROR, ost.str());
-								}
-								ostFinal.str("");
-								ostFinal << "\"result\": \"error\"," << std::endl;
-								ostFinal << "\"description\": \"проблема с базой данных (сообщите администрации)\"" << std::endl;
-							}
-						}
-
-						else
-						{
-							{
-								CLog			log;
-								ostringstream	ost;
-
-								ost.str("");
-								ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": can't find message after inserting into DB (original message: [" << message << "], DB message: [" << tempMessage << "])";
-								log.Write(ERROR, ost.str());
-							}
-							ostFinal.str("");
-							ostFinal << "\"result\": \"error\"," << std::endl;
-							ostFinal << "\"description\": \"проблема с базой данных (сообщите администрации)\"" << std::endl;
-						}
-
-					}
-					else
-					{
-						{
-							CLog	log;
-							MESSAGE_ERROR("", action, "can't find message after inserting into DB");
-						}
-						ostFinal.str("");
-						ostFinal << "\"result\": \"error\"," << std::endl;
-						ostFinal << "\"description\": \"проблема с базой данных (сообщите администрации)\"" << std::endl;
-					}
-
-
-				}
-				else
-				{
-					{
-						MESSAGE_DEBUG("", action, "message_body or message_recipient is empty");
-					}
-					ostFinal.str("");
-					ostFinal << "\"result\": \"error\"," << std::endl;
-					ostFinal << "\"description\": \"сообщение должно содержать текст\"" << std::endl;
-				}
-
-
-
-
-
-			}
-
-
-			indexPage.RegisterVariableForce("result", "{" + ostFinal.str() + "}");
-
-			if(!indexPage.SetTemplate("json_response.htmlt"))
-			{
-				MESSAGE_ERROR("", action, "template file json_response.htmlt was missing");
-				throw CException("Template file was missing");
-			}
-
-			MESSAGE_DEBUG("", action, "finish");
-		}
-*/
 		if(action == "AJAX_chatMarkMessageReadByMessageID")
 		{
 			ostringstream	ost, ostFinal;
@@ -4659,10 +4155,8 @@ int main()
 				}
 				else
 				{
-					{
-						CLog	log;
-						MESSAGE_ERROR("", action, "messageID is empty");
-					}
+					MESSAGE_ERROR("", action, "messageID is empty");
+
 					ostFinal.str("");
 					ostFinal << "\"result\": \"error\"," << std::endl;
 					ostFinal << "\"description\": \"messageID is empty\"" << std::endl;
@@ -4723,10 +4217,7 @@ int main()
 					}
 					else
 					{
-						{
-							CLog	log;
-							MESSAGE_ERROR("", action, "updating users_notification table");
-						}
+						MESSAGE_ERROR("", action, "updating users_notification table");
 
 						ostFinal.str("");
 						ostFinal << "\"result\": \"fail\"" << std::endl;
@@ -4734,10 +4225,8 @@ int main()
 				}
 				else
 				{
-					{
-						CLog	log;
-						MESSAGE_ERROR("", action, "notificationID is empty");
-					}
+					MESSAGE_ERROR("", action, "notificationID is empty");
+
 					ostFinal.str("");
 					ostFinal << "\"result\": \"error\"," << std::endl;
 					ostFinal << "\"description\": \"notificationID is empty\"" << std::endl;
@@ -4794,10 +4283,8 @@ int main()
 				}
 				else
 				{
-					{
-						CLog	log;
-						MESSAGE_ERROR("", action, "userID is empty");
-					}
+					MESSAGE_ERROR("", action, "userID is empty");
+
 					ostFinal.str("");
 					ostFinal << "\"result\": \"error\"," << std::endl;
 					ostFinal << "\"description\": \"userID is empty\"" << std::endl;
@@ -4843,16 +4330,12 @@ int main()
 					db.Query("UPDATE `feed_images` SET `tempSet`='0', `removeFlag`=\"keep\" WHERE `tempSet`=\"" + imageTempSet + "\" AND `userID`=\"" + user.GetID() + "\";");
 					if(db.isError())
 					{
-						CLog	log;
 						MESSAGE_ERROR("", action, "DB error message(" + db.GetErrorMessage() + ")");
 					}
 				}
 				else
 				{
-					{
-						CLog	log;
-						MESSAGE_ERROR("", action, "imageTempSet is empty");
-					}
+					MESSAGE_ERROR("", action, "imageTempSet is empty");
 				}
 
 
@@ -5046,7 +4529,7 @@ int main()
 			{
 				MESSAGE_DEBUG("", action, "re-login required");
 
-				LogoutIfGuest(action, &indexPage, &db, &user);
+				LogoutIfGuest(action, &config, &indexPage, &db, &user);
 			}
 			else
 			{
@@ -5253,20 +4736,14 @@ int main()
 					{
 						ostResult << "{\"result\": \"error\", \"description\": \"error updating live feed\"}";
 
-						{
-							CLog	log;
-							MESSAGE_ERROR("", action, "can't update feed table");
-						}
+						MESSAGE_ERROR("", action, "can't update feed table");
 					}
 				}
 				else
 				{
 					ostResult << "{\"result\": \"error\", \"description\": \"error updating table users\"}";
 
-					{
-						CLog	log;
-						MESSAGE_ERROR("", action, "can't update users table");
-					}
+					MESSAGE_ERROR("", action, "can't update users table");
 				}
 
 
@@ -5299,7 +4776,7 @@ int main()
 			}
 			else
 			{
-				long int		companyID = atol(indexPage.GetVarsHandler()->Get("companyID").c_str());
+				auto		companyID = stol(indexPage.GetVarsHandler()->Get("companyID"));
 				ostringstream	ost;
 
 				ost.str("");
@@ -5325,20 +4802,12 @@ int main()
 						{
 							ostResult << "{\"result\": \"error\", \"description\": \"error updating live feed\"}";
 
-							{
-								CLog	log;
-								MESSAGE_ERROR("", action, "can't update feed table");
-							}
+							MESSAGE_ERROR("", action, "can't update feed table");
 						}
 					}
 					else
 					{
-						ostringstream	ost;
-
-						{
-							CLog	log;
-							MESSAGE_DEBUG("", action, "user trying update company not belonging to him");
-						}
+						MESSAGE_DEBUG("", action, "user trying update company not belonging to him");
 
 						ostResult << "{\"result\": \"error\", \"description\": \"you didn't works in that company\"}";
 					}
@@ -5417,13 +4886,11 @@ int main()
 							db.Query(ost.str());
 							if(db.isError())
 							{
-								CLog			log;
 								MESSAGE_ERROR("", action, "can't update recommendation status to 'potentially adverse' (" + db.GetErrorMessage() + ")");
 							}
 						}
 						else
 						{
-							CLog	log;
 							MESSAGE_DEBUG("", action, "adverse words not found in new `users_recommendation` (" + recommendationID + ")");
 						}
 
@@ -5440,34 +4907,22 @@ int main()
 						{
 							ostResult << "{\"result\": \"error\", \"description\": \"error updating live feed\"}";
 
-							{
-								CLog	log;
-								MESSAGE_ERROR("", action, "can't update feed table");
-							}
+							MESSAGE_ERROR("", action, "can't update feed table");
 						}
 					}
 					else
 					{
 						ostResult << "{\"result\": \"error\", \"description\": \"error updating table users\"}";
 
-						{
-							CLog	log;
-							MESSAGE_ERROR("", action, "can't update users table");
-						}
+						MESSAGE_ERROR("", action, "can't update users table");
 					}
 				}
 				else
 				{
 					ostResult << "{\"result\": \"error\", \"description\": \"recommendation not found or not belongs to you\"}";
 
-					{
-						CLog	log;
-						MESSAGE_ERROR("", action, "recommendation not found or not belongs to you");
-					}
+					MESSAGE_ERROR("", action, "recommendation not found or not belongs to you");
 				}
-
-
-
 			}
 
 			indexPage.RegisterVariableForce("result", ostResult.str());
@@ -5557,7 +5012,7 @@ int main()
 				auto			companyName			= CheckHTTPParam_Text(indexPage.GetVarsHandler()->Get("companyName"));
 				auto			occupationStart		= CheckHTTPParam_Text(indexPage.GetVarsHandler()->Get("occupationStart"));
 				auto			occupationFinish	= CheckHTTPParam_Text(indexPage.GetVarsHandler()->Get("occupationFinish"));
-				auto			currentCompany		= atol(indexPage.GetVarsHandler()->Get("currentCompany").c_str());
+				auto			currentCompany		= stol(indexPage.GetVarsHandler()->Get("currentCompany"));
 				auto			responsibilities	= CheckHTTPParam_Text(indexPage.GetVarsHandler()->Get("responsibilities"));
 				ostringstream	ost;
 
@@ -5709,10 +5164,8 @@ int main()
 						try {
 							trackID = stol(db.Get(0, "id"));
 						} catch (...) {
-							{
-								CLog log;
-								MESSAGE_ERROR("", action, "can't convert trackID[" + to_string(trackID) + "] to number");
-							}
+							MESSAGE_ERROR("", action, "can't convert trackID[" + to_string(trackID) + "] to number");
+
 							trackID = 0;
 						}
 						existingVendorID = db.Get(0, "vendor_id");
@@ -5723,10 +5176,8 @@ int main()
 								okToAdd = true;
 							else
 							{
-								{
-									CLog	log;
-									MESSAGE_ERROR("", action, "incorrect certification[" + track + "] vendor[" + newVendorName + "] trying to add");
-								}
+								MESSAGE_ERROR("", action, "incorrect certification[" + track + "] vendor[" + newVendorName + "] trying to add");
+
 								ostResult << "{\"result\": \"error\", \"description\": \"ОШИБКА: некорректно указан вендор\"}";
 							}
 						}
@@ -5735,10 +5186,8 @@ int main()
 							// --- should not come here
 							// --- if you get here then DB-structure is wrong 
 							// --- particularly "certification_track" have non-existent or empty vendorID
-							{
-								CLog	log;
-								MESSAGE_ERROR("", action, "incorrect DB structure of certification[" + track + "]");
-							}
+							MESSAGE_ERROR("", action, "incorrect DB structure of certification[" + track + "]");
+
 							newVendorID = db.InsertQuery("INSERT INTO `company` (`name`) VALUES (\"" + newVendorName + "\");");
 							db.Query("UPDATE `certification_tracks` SET `vendor_id`=\"" + to_string(newVendorID) + "\" WHERE `id`=\"" + to_string(trackID) + "\";");
 							okToAdd = true;
@@ -5746,14 +5195,8 @@ int main()
 					}
 					else
 					{
-						{
-							CLog	log;
-							ostringstream   ost;
+						MESSAGE_DEBUG("", "", "track [" + track + "] needed to be added to DB");
 
-							ost.str("");
-							ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": track [" << track << "] needed to be added to DB";
-							log.Write(DEBUG, ost.str());
-						}
 						if(db.Query("SELECT * FROM `company` WHERE `name`=\"" + newVendorName + "\";"))
 							newVendorID = stol(db.Get(0, "id"));
 						else
@@ -5766,20 +5209,12 @@ int main()
 								okToAdd = true;
 							else
 							{
-								CLog	log;
 								MESSAGE_ERROR("", action, "inserting into `certification_tracks`");
 							}
 						}
 						else
 						{
-							{
-								CLog	log;
-								ostringstream   ost;
-
-								ost.str("");
-								ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": newVendorID is empty";
-								log.Write(ERROR, ost.str());
-							}
+							MESSAGE_ERROR("", "", "newVendorID is empty");
 						}
 					}
 
@@ -5801,7 +5236,6 @@ int main()
 							}
 							else
 							{
-								CLog	log;
 								MESSAGE_ERROR("", action, "insertion into table news_feed");
 							}
 
@@ -5817,41 +5251,19 @@ int main()
 						}
 						else
 						{
-							{
-								CLog	log;
-								ostringstream   ost;
-
-								ost.str("");
-								ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": issue with inserting into DB table [users_certification]";
-								log.Write(ERROR, ost.str());
-							}
+							MESSAGE_ERROR("", "", "issue with inserting into DB table [users_certification]");
 
 							ostResult << "{\"result\": \"error\", \"description\": \"issue with DB operations on adding certification\"}";
 						}
 					}
 					else
 					{
-						{
-							CLog	log;
-							ostringstream	ost;
-
-							ost.str("");
-							ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": issue with DB operations on vendor or track";
-							log.Write(DEBUG, ost.str());
-						}
-						// --- ostResult pre-filled earlier
+						MESSAGE_DEBUG("", "", "issue with DB operations on vendor or track");
 					}
 				}
 				else
 				{
-					{
-						CLog	log;
-						ostringstream	ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": mandatory parameter missed or empty in HTML request [vendor, track, number]";
-						log.Write(ERROR, ost.str());
-					}
+					MESSAGE_ERROR("", "", "mandatory parameter missed or empty in HTML request [vendor, track, number]");
 
 					ostResult << "{\"result\": \"error\", \"description\": \"any mandatory parameter missed\"}";
 				}
@@ -5885,41 +5297,11 @@ int main()
 
 				if(newVendorName.length() && track.length())
 				{
-					unsigned long		newVendorID = 0, trackID = 0;
-					string			  existingVendorID = "", existingVendorName = "";
-					string			  coverPhotoFolder = "", coverPhotoFilename = "";
-					bool				okToAdd = false;
-	/*
-					ost.str("");
-					ost << "SELECT * FROM `company` WHERE `name`=\"" << newVendorName << "\";";
-					if((affected = db.Query(ost.str())) > 0)
-					{
-						vendorID = stol(db.Get(0, "id"));
+					auto			newVendorID = 0, trackID = 0;
+					auto			existingVendorID = ""s, existingVendorName = ""s;
+					auto			coverPhotoFolder = ""s, coverPhotoFilename = ""s;
+					auto			okToAdd = false;
 
-						{
-							CLog	log;
-							ostringstream	ost;
-
-							ost.str("");
-							ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": vendor [" << vendor << "] already exists, no need to update DB.";
-							log.Write(DEBUG, ost.str());
-						}
-					}
-					else
-					{
-						{
-							CLog	log;
-							ostringstream	ost;
-
-							ost.str("");
-							ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": vendor [" << newVendorName << "] needed to be added to DB";
-							log.Write(DEBUG, ost.str());
-						}
-						ost.str("");
-						ost << "INSERT INTO `company` (`name`) VALUES (\"" << newVendorName << "\");";
-						vendorID = db.InsertQuery(ost.str());
-					}
-	*/
 					// --- certification_track.name must be unique
 					// --- to avoid: CCIE(Cisco) && CCIE(Juniper)
 					if(db.Query("SELECT * FROM `certification_tracks` WHERE `title`=\"" + track + "\";"))
@@ -5927,10 +5309,8 @@ int main()
 						try {
 							trackID = stol(db.Get(0, "id"));
 						} catch (...) {
-							{
-								CLog log;
-								MESSAGE_ERROR("", action, "can't convert trackID[" + to_string(trackID) + "] to number");
-							}
+							MESSAGE_ERROR("", action, "can't convert trackID[" + to_string(trackID) + "] to number");
+
 							trackID = 0;
 						}
 						coverPhotoFolder = db.Get(0, "logo_folder");
@@ -5943,10 +5323,8 @@ int main()
 								okToAdd = true;
 							else
 							{
-								{
-									CLog	log;
-									MESSAGE_ERROR("", action, "incorrect certification[" + track + "] vendor[" + newVendorName + "] trying to add");
-								}
+								MESSAGE_ERROR("", action, "incorrect certification[" + track + "] vendor[" + newVendorName + "] trying to add");
+
 								ostResult << "{\"result\": \"error\", \"description\": \"ОШИБКА: некорректно указан вендор\"}";
 							}
 						}
@@ -5955,10 +5333,8 @@ int main()
 							// --- should not come here
 							// --- if you get here then DB-structure is wrong 
 							// --- particularly "certification_track" have non-existent or empty vendorID
-							{
-								CLog	log;
-								MESSAGE_ERROR("", action, "incorrect DB structure of certification[" + track + "]");
-							}
+							MESSAGE_ERROR("", action, "incorrect DB structure of certification[" + track + "]");
+
 							newVendorID = db.InsertQuery("INSERT INTO `company` (`name`) VALUES (\"" + newVendorName + "\");");
 							db.Query("UPDATE `certification_tracks` SET `vendor_id`=\"" + to_string(newVendorID) + "\" WHERE `id`=\"" + to_string(trackID) + "\";");
 							okToAdd = true;
@@ -5966,14 +5342,8 @@ int main()
 					}
 					else
 					{
-						{
-							CLog	log;
-							ostringstream	ost;
+						MESSAGE_DEBUG("", "", "track [" + track + "] needed to be added to DB");
 
-							ost.str("");
-							ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": track [" << track << "] needed to be added to DB";
-							log.Write(DEBUG, ost.str());
-						}
 						if(db.Query("SELECT * FROM `company` WHERE `name`=\"" + newVendorName + "\";"))
 							newVendorID = stol(db.Get(0, "id"));
 						else
@@ -5986,20 +5356,12 @@ int main()
 								okToAdd = true;
 							else
 							{
-								CLog	log;
 								MESSAGE_ERROR("", action, "inserting into `certification_tracks`");
 							}
 						}
 						else
 						{
-							{
-								CLog	log;
-								ostringstream   ost;
-
-								ost.str("");
-								ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": newVendorID is empty";
-								log.Write(ERROR, ost.str());
-							}
+							MESSAGE_ERROR("", "", "newVendorID is empty");
 						}
 					}
 
@@ -6023,10 +5385,7 @@ int main()
 							}
 							else
 							{
-								{
-									CLog			log;
-									MESSAGE_ERROR("", action, "inserting into `feed` (" + ost.str() + ")");
-								}
+								MESSAGE_ERROR("", action, "inserting into `feed` (" + ost.str() + ")");
 							}
 
 							ostResult << "{\"result\": \"success\", "
@@ -6040,41 +5399,19 @@ int main()
 						}
 						else
 						{
-							{
-								CLog	log;
-								ostringstream	ost;
-
-								ost.str("");
-								ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": issue with inserting into DB table [users_courses]";
-								log.Write(ERROR, ost.str());
-							}
+							MESSAGE_ERROR("", "", "issue with inserting into DB table [users_courses]");
 
 							ostResult << "{\"result\": \"error\", \"description\": \"issue with DB operations on adding course\"}";
 						}
 					}
 					else
 					{
-						{
-							CLog	log;
-							ostringstream	ost;
-
-							ost.str("");
-							ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": issue with DB operations on vendor or track";
-							log.Write(ERROR, ost.str());
-						}
-						// --- ostResult pre-filled earlier
+						MESSAGE_ERROR("", "", "issue with DB operations on vendor or track");
 					}
 				}
 				else
 				{
-					{
-						CLog	log;
-						ostringstream	ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": mandatory parameter missed or empty in HTML request [vendor, track]";
-						log.Write(ERROR, ost.str());
-					}
+					MESSAGE_ERROR("", "", "mandatory parameter missed or empty in HTML request [vendor, track]");
 
 					ostResult << "{\"result\": \"error\", \"description\": \"any mandatory parameter missed\"}";
 				}
@@ -6112,10 +5449,8 @@ int main()
 				catch(...)
 				{
 					id = "";
-					{
-						CLog log;
-						MESSAGE_DEBUG("", action, "can't convert id to number");
-					}
+
+					MESSAGE_DEBUG("", action, "can't convert id to number");
 				}
 
 				try
@@ -6125,10 +5460,8 @@ int main()
 				catch(...)
 				{
 					courseID = "";
-					{
-						CLog log;
-						MESSAGE_DEBUG("", action, "can't convert courseID to number");
-					}
+
+					MESSAGE_DEBUG("", action, "can't convert courseID to number");
 				}
 
 				try
@@ -6139,10 +5472,8 @@ int main()
 				catch(...)
 				{
 					rating = "";
-					{
-						CLog log;
-						MESSAGE_ERROR("", action, "fail to convert rating to number");
-					}
+
+					MESSAGE_ERROR("", action, "fail to convert rating to number");
 				}
 
 				if(id.length() && db.Query("select `id`, `track_id`, `rating` from `users_courses` WHERE `user_id`=\"" + user.GetID() + "\" and `id`=\"" + id + "\";"))
@@ -6166,7 +5497,6 @@ int main()
 							isSuccess = true;
 						else
 						{
-							CLog log;
 							MESSAGE_ERROR("", action, "inserting  into `users_courses` fail");
 
 							ostResult << "{\"result\":\"error\",\"description\":\"ошибка: не указан courseID\"}";
@@ -6174,7 +5504,6 @@ int main()
 					}
 					else
 					{
-						CLog log;
 						MESSAGE_ERROR("", action, "courseID is not defined");
 
 						ostResult << "{\"result\":\"error\",\"description\":\"ошибка: не указан courseID\"}";
@@ -6191,10 +5520,7 @@ int main()
 						}
 						else
 						{
-							{
-								CLog			log;
-								MESSAGE_ERROR("", action, "inserting into `feed`");
-							}
+							MESSAGE_ERROR("", action, "inserting into `feed`");
 						}
 					}
 
@@ -6247,25 +5573,11 @@ int main()
 						language_logo_folder = db.Get(0, "logo_folder");
 						language_logo_filename = db.Get(0, "logo_filename");
 
-						{
-							CLog	log;
-							ostringstream	ost;
-
-							ost.str("");
-							ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": title [" << title << "] already exists, no need to update DB.";
-							log.Write(DEBUG, ost.str());
-						}
+						MESSAGE_DEBUG("", "", "title [" + title + "] already exists, no need to update DB.");
 					}
 					else
 					{
-						{
-							CLog	log;
-							ostringstream	ost;
-
-							ost.str("");
-							ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": title [" << title << "] needed to be added to DB";
-							log.Write(DEBUG, ost.str());
-						}
+						MESSAGE_DEBUG("", "", "title [" + title + "] needed to be added to DB");
 
 						ost.str("");
 						ost << "INSERT INTO `language` (`title`) VALUES (\"" << title << "\");";
@@ -6292,10 +5604,7 @@ int main()
 							}
 							else
 							{
-								{
-									CLog			log;
-									MESSAGE_ERROR("", action, "inserting into `feed` (" + ost.str() + ")");
-								}
+								MESSAGE_ERROR("", action, "inserting into `feed` (" + ost.str() + ")");
 							}
 
 							ostResult << "{\"result\": \"success\","
@@ -6307,42 +5616,21 @@ int main()
 						}
 						else
 						{
-							{
-								CLog	log;
-								ostringstream	ost;
-
-								ost.str("");
-								ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": issue with inserting into DB table [users_Languages]";
-								log.Write(ERROR, ost.str());
-							}
+							MESSAGE_ERROR("", "", "issue with inserting into DB table [users_Languages]");
 
 							ostResult << "{\"result\": \"error\", \"description\": \"issue with DB operations on adding Language\"}";
 						}
 					}
 					else
 					{
-						{
-							CLog	log;
-							ostringstream	ost;
-
-							ost.str("");
-							ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": issue with DB operations on title or level";
-							log.Write(ERROR, ost.str());
-						}
+						MESSAGE_ERROR("", "", "issue with DB operations on title or level");
 
 						ostResult << "{\"result\": \"error\", \"description\": \"issue with DB operations on title or level\"}";
 					}
 				}
 				else
 				{
-					{
-						CLog	log;
-						ostringstream	ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": mandatory parameter missed or empty in HTML request [title, level]";
-						log.Write(ERROR, ost.str());
-					}
+					MESSAGE_ERROR("", "", "mandatory parameter missed or empty in HTML request [title, level]");
 
 					ostResult << "{\"result\": \"error\", \"description\": \"any mandatory parameter missed\"}";
 				}
@@ -6385,25 +5673,12 @@ int main()
 					{
 						skillID = stol(db.Get(0, "id"));
 
-						{
-							CLog	log;
-							ostringstream	ost;
-
-							ost.str("");
-							ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": title [" << title << "] already exists, no need to update DB.";
-							log.Write(DEBUG, ost.str());
-						}
+						MESSAGE_DEBUG("", "", "title [" + title + "] already exists, no need to update DB.");
 					}
 					else
 					{
-						{
-							CLog	log;
-							ostringstream	ost;
+						MESSAGE_DEBUG("", "", "title [" + title + "] needed to be added to DB");
 
-							ost.str("");
-							ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": title [" << title << "] needed to be added to DB";
-							log.Write(DEBUG, ost.str());
-						}
 						ost.str("");
 						ost << "INSERT INTO `skill` (`title`) VALUES (\"" << title << "\");";
 						skillID = db.InsertQuery(ost.str());
@@ -6429,52 +5704,28 @@ int main()
 							}
 							else
 							{
-								{
-									CLog			log;
-									MESSAGE_ERROR("", action, "inserting into `feed` (" + ost.str() + ")");
-								}
+								MESSAGE_ERROR("", action, "inserting into `feed` (" + ost.str() + ")");
 							}
 
 							ostResult << "{\"result\": \"success\", \"skillID\": \"" << newSkillID << "\"}";
 						}
 						else
 						{
-							{
-								CLog	log;
-								ostringstream	ost;
-
-								ost.str("");
-								ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": issue with inserting into DB table [users_skill]";
-								log.Write(ERROR, ost.str());
-							}
+							MESSAGE_ERROR("", "", "issue with inserting into DB table [users_skill]");
 
 							ostResult << "{\"result\": \"error\", \"description\": \"issue with DB operations on adding skill\"}";
 						}
 					}
 					else
 					{
-						{
-							CLog	log;
-							ostringstream	ost;
-
-							ost.str("");
-							ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": issue with DB operations on title or level";
-							log.Write(ERROR, ost.str());
-						}
+						MESSAGE_ERROR("", "", "issue with DB operations on title or level");
 
 						ostResult << "{\"result\": \"error\", \"description\": \"issue with DB operations on title or level\"}";
 					}
 				}
 				else
 				{
-					{
-						CLog	log;
-						ostringstream	ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": mandatory parameter missed or empty in HTML request [title]";
-						log.Write(ERROR, ost.str());
-					}
+					MESSAGE_ERROR("", "", "mandatory parameter missed or empty in HTML request [title]");
 
 					ostResult << "{\"result\": \"error\", \"description\": \"any mandatory parameter missed\"}";
 				}
@@ -6508,7 +5759,7 @@ int main()
 				auto			periodFinish	= CheckHTTPParam_Text(indexPage.GetVarsHandler()->Get("periodFinish"));
 				ostringstream	ost;
 
-				if(locality.length() && title.length() && periodStart.length() && periodFinish.length() && (atoi(periodStart.c_str()) <= atoi(periodFinish.c_str())))
+				if(locality.length() && title.length() && periodStart.length() && periodFinish.length() && (stoi(periodStart) <= stoi(periodFinish)))
 				{
 					unsigned long		localityID = 0, schoolInternalID = 0;
 					string			  school_logo_folder = "";
@@ -6521,25 +5772,12 @@ int main()
 					{
 						localityID = stol(db.Get(0, "id"));
 
-						{
-							CLog	log;
-							ostringstream	ost;
-
-							ost.str("");
-							ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": locality [" << locality << "] already exists, no need to update DB.";
-							log.Write(DEBUG, ost.str());
-						}
+						MESSAGE_DEBUG("", "", "locality [" + locality + "] already exists, no need to update DB.");
 					}
 					else
 					{
-						{
-							CLog	log;
-							ostringstream	ost;
+						MESSAGE_DEBUG("", "", "locality [" + locality + "] needed to be added to DB");
 
-							ost.str("");
-							ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": locality [" << locality << "] needed to be added to DB";
-							log.Write(DEBUG, ost.str());
-						}
 						ost.str("");
 						ost << "INSERT INTO `geo_locality` (`title`) VALUES (\"" << locality << "\");";
 						localityID = db.InsertQuery(ost.str());
@@ -6552,25 +5790,13 @@ int main()
 						schoolInternalID = stol(db.Get(0, "id"));
 						school_logo_folder = db.Get(0, "logo_folder");
 						school_logo_filename = db.Get(0, "logo_filename");
-						{
-							CLog	log;
-							ostringstream	ost;
 
-							ost.str("");
-							ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": school [" << title << "] already exists, no need to update DB.";
-							log.Write(DEBUG, ost.str());
-						}
+						MESSAGE_DEBUG("", "", "school [" + title + "] already exists, no need to update DB.");
 					}
 					else
 					{
-						{
-							CLog	log;
-							ostringstream	ost;
+						MESSAGE_DEBUG("", "", "school [" + title + "] needed to be added to DB");
 
-							ost.str("");
-							ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": school [" << title << "] needed to be added to DB";
-							log.Write(DEBUG, ost.str());
-						}
 						ost.str("");
 						ost << "INSERT INTO `school` (`geo_locality_id`, `title`) VALUES (\"" << localityID << "\",\"" << title << "\");";
 						schoolInternalID = db.InsertQuery(ost.str());
@@ -6596,10 +5822,7 @@ int main()
 							}
 							else
 							{
-								{
-									CLog			log;
-									MESSAGE_ERROR("", action, "inserting into `feed` (" + ost.str() + ")");
-								}
+								MESSAGE_ERROR("", action, "inserting into `feed` (" + ost.str() + ")");
 							}
 
 							ostResult << "{\"result\": \"success\", "
@@ -6611,42 +5834,21 @@ int main()
 						}
 						else
 						{
-							{
-								CLog	log;
-								ostringstream	ost;
-
-								ost.str("");
-								ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": issue with inserting into DB table [users_school]";
-								log.Write(ERROR, ost.str());
-							}
+							MESSAGE_ERROR("", "", "issue with inserting into DB table [users_school]");
 
 							ostResult << "{\"result\": \"error\", \"description\": \"issue with DB operations on adding school\"}";
 						}
 					}
 					else
 					{
-						{
-							CLog	log;
-							ostringstream	ost;
-
-							ost.str("");
-							ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": issue with DB operations on locality or school";
-							log.Write(ERROR, ost.str());
-						}
+						MESSAGE_ERROR("", "", "issue with DB operations on locality or school");
 
 						ostResult << "{\"result\": \"error\", \"description\": \"issue with DB operations on locality or school\"}";
 					}
 				}
 				else
 				{
-					{
-						CLog	log;
-						ostringstream	ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": mandatory parameter missed or empty in HTML request [locality, school, periodStart, periodFinish] or (periodStart > periodFinish)";
-						log.Write(ERROR, ost.str());
-					}
+					MESSAGE_ERROR("", "", "mandatory parameter missed or empty in HTML request [locality, school, periodStart, periodFinish] or (periodStart > periodFinish)");
 
 					ostResult << "{\"result\": \"error\", \"description\": \"any mandatory parameter missed\"}";
 				}
@@ -6680,41 +5882,24 @@ int main()
 				auto			periodFinish	= CheckHTTPParam_Text(indexPage.GetVarsHandler()->Get("periodFinish"));
 				ostringstream	ost;
 
-				if(region.length() && title.length() && degree.length() && periodStart.length() && periodFinish.length() && (atoi(periodStart.c_str()) <= atoi(periodFinish.c_str())))
+				if(region.length() && title.length() && degree.length() && periodStart.length() && periodFinish.length() && (stoi(periodStart) <= stoi(periodFinish)))
 				{
 					unsigned long		regionID = 0, universityInternalID = 0;
-					string			  university_logo_folder = "";
-					string			  university_logo_filename = "";
-					int					affected;
+					auto				university_logo_folder = ""s;
+					auto				university_logo_filename = ""s;
+					auto				affected = db.Query("SELECT * FROM `geo_region` WHERE `title`=\"" + region + "\";");
 
-					ost.str("");
-					ost << "SELECT * FROM `geo_region` WHERE `title`=\"" << region << "\";";
-					if((affected = db.Query(ost.str())) > 0)
+					if(affected > 0)
 					{
 						regionID = stol(db.Get(0, "id"));
 
-						{
-							CLog	log;
-							ostringstream	ost;
-
-							ost.str("");
-							ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": region [" << region << "] already exists, no need to update DB.";
-							log.Write(DEBUG, ost.str());
-						}
+						MESSAGE_DEBUG("", "", "region [" + region + "] already exists, no need to update DB.");
 					}
 					else
 					{
-						{
-							CLog	log;
-							ostringstream	ost;
+						MESSAGE_DEBUG("", "", "region [" + region + "] needed to be added to DB");
 
-							ost.str("");
-							ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": region [" << region << "] needed to be added to DB";
-							log.Write(DEBUG, ost.str());
-						}
-						ost.str("");
-						ost << "INSERT INTO `geo_region` (`title`) VALUES (\"" << region << "\");";
-						regionID = db.InsertQuery(ost.str());
+						regionID = db.InsertQuery("INSERT INTO `geo_region` (`title`) VALUES (\"" + region + "\");");
 					}
 
 					ost.str("");
@@ -6725,25 +5910,12 @@ int main()
 						university_logo_folder = db.Get(0, "logo_folder");
 						university_logo_filename = db.Get(0, "logo_filename");
 
-						{
-							CLog	log;
-							ostringstream	ost;
-
-							ost.str("");
-							ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": university [" << title << "] already exists, no need to update DB.";
-							log.Write(DEBUG, ost.str());
-						}
+						MESSAGE_DEBUG("", "", "university [" + title + "] already exists, no need to update DB.");
 					}
 					else
 					{
-						{
-							CLog	log;
-							ostringstream	ost;
+						MESSAGE_DEBUG("", "", "university [" + title + "] needed to be added to DB");
 
-							ost.str("");
-							ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": university [" << title << "] needed to be added to DB";
-							log.Write(DEBUG, ost.str());
-						}
 						ost.str("");
 						ost << "INSERT INTO `university` (`title`, `geo_region_id`) VALUES (\"" << title << "\", \"" << regionID << "\");";
 						universityInternalID = db.InsertQuery(ost.str());
@@ -6769,10 +5941,7 @@ int main()
 							}
 							else
 							{
-								{
-									CLog			log;
-									MESSAGE_ERROR("", action, "inserting into `feed` (" + ost.str() + ")");
-								}
+								MESSAGE_ERROR("", action, "inserting into `feed` (" + ost.str() + ")");
 							}
 
 							ostResult << "{\"result\": \"success\", "
@@ -6784,42 +5953,21 @@ int main()
 						}
 						else
 						{
-							{
-								CLog	log;
-								ostringstream	ost;
-
-								ost.str("");
-								ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": issue with inserting into DB table [users_university]";
-								log.Write(ERROR, ost.str());
-							}
+							MESSAGE_ERROR("", "", "issue with inserting into DB table [users_university]");
 
 							ostResult << "{\"result\": \"error\", \"description\": \"issue with DB operations on adding university\"}";
 						}
 					}
 					else
 					{
-						{
-							CLog	log;
-							ostringstream	ost;
-
-							ost.str("");
-							ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": issue with DB operations on region or university";
-							log.Write(ERROR, ost.str());
-						}
+						MESSAGE_ERROR("", "", "issue with DB operations on region or university");
 
 						ostResult << "{\"result\": \"error\", \"description\": \"issue with DB operations on region or university\"}";
 					}
 				}
 				else
 				{
-					{
-						CLog	log;
-						ostringstream	ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": mandatory parameter missed or empty in HTML request [region, university, degree, period] or (periodStart > periodFinish)";
-						log.Write(ERROR, ost.str());
-					}
+					MESSAGE_ERROR("", "", "mandatory parameter missed or empty in HTML request [region, university, degree, period] or (periodStart > periodFinish)");
 
 					ostResult << "{\"result\": \"error\", \"description\": \"any mandatory parameter missed\"}";
 				}
@@ -6884,13 +6032,11 @@ int main()
 							db.Query("UPDATE `users_recommendation` SET `state`='potentially adverse' WHERE `id`=\"" + to_string(newRecommendationID) + "\";");
 							if(db.isError())
 							{
-								CLog			log;
 								MESSAGE_ERROR("", action, "can't update recommendation status to 'potentially adverse' (" + db.GetErrorMessage() + ")");
 							}
 						}
 						else
 						{
-							CLog	log;
 							MESSAGE_DEBUG("", action, "adverse words not found in new `users_recommendation` (" + to_string(newRecommendationID) + ")");
 						}
 
@@ -6905,29 +6051,20 @@ int main()
 						{
 							ostResult << "{\"result\": \"error\", \"description\": \"error updating live feed\"}";
 
-							{
-								CLog	log;
-								MESSAGE_ERROR("", action, "can't update feed table");
-							}
+							MESSAGE_ERROR("", action, "can't update feed table");
 						}
 
 					}
 					else
 					{
-						{
-							CLog	log;
-							MESSAGE_ERROR("", action, "inserting into users_recommendation table");
-						}
+						MESSAGE_ERROR("", action, "inserting into users_recommendation table");
 
 						ostResult << "{\"result\": \"error\", \"description\": \"inserting into users_recommendation table\"}";
 					}
 				}
 				else
 				{
-					{
-						CLog	log;
-						MESSAGE_ERROR("", action, "mandatory parameter missed or empty in HTML request [title or eventTimestamp or recommendedUserID]");
-					}
+					MESSAGE_ERROR("", action, "mandatory parameter missed or empty in HTML request [title or eventTimestamp or recommendedUserID]");
 
 					ostResult << "{\"result\": \"error\", \"description\": \"any mandatory parameter missed\"}";
 				}
@@ -6952,7 +6089,7 @@ int main()
 			{
 				MESSAGE_DEBUG("", action, "re-login required");
 
-				LogoutIfGuest(action, &indexPage, &db, &user);
+				LogoutIfGuest(action, &config, &indexPage, &db, &user);
 			}
 			else
 			{
@@ -7129,10 +6266,7 @@ int main()
 							}
 							else
 							{
-								{
-									CLog	log;
-									MESSAGE_ERROR("", action, "finding messageID in feed");
-								}
+								MESSAGE_ERROR("", action, "finding messageID in feed");
 
 								ost.str("");
 								ost << "{";
@@ -7149,8 +6283,6 @@ int main()
 							ost << "\"result\": \"error\",";
 							ost << "\"description\": \"messageID[" << newsFeedMessageID << "] is not exists\"";
 							ost << "}";
-
-							CLog	log;
 
 							MESSAGE_ERROR("", action, "can't post message due to missing messageID");
 						}
@@ -7176,8 +6308,6 @@ int main()
 							ost << "\"description\": \"usersBookID[" << newsFeedMessageID << "] is not exists\"";
 							ost << "}";
 
-							CLog	log;
-
 							MESSAGE_ERROR("", action, "can't find ID in users_books table");
 						}
 					} // --- action == "AJAX_commentOnBookInNewsFeed"
@@ -7201,8 +6331,6 @@ int main()
 							ost << "\"result\": \"error\",";
 							ost << "\"description\": \"users_certifications.id [" << newsFeedMessageID << "] is not exists\"";
 							ost << "}";
-
-							CLog	log;
 
 							MESSAGE_ERROR("", action, "can't find ID in users_certifications table");
 						}
@@ -7228,8 +6356,6 @@ int main()
 							ost << "\"description\": \"users_courses.id [" << newsFeedMessageID << "] is not exists\"";
 							ost << "}";
 
-							CLog	log;
-
 							MESSAGE_ERROR("", action, "can't find ID in users_courses table");
 						}
 					} // --- action == "AJAX_commentOnCourseInNewsFeed"
@@ -7253,8 +6379,6 @@ int main()
 							ost << "\"result\": \"error\",";
 							ost << "\"description\": \"users_languages.id [" << newsFeedMessageID << "] is not exists\"";
 							ost << "}";
-
-							CLog	log;
 
 							MESSAGE_ERROR("", action, "can't find ID in users_languages table");
 						}
@@ -7280,8 +6404,6 @@ int main()
 							ost << "\"description\": \"users_companies.id [" << newsFeedMessageID << "] is not exists\"";
 							ost << "}";
 
-							CLog	log;
-
 							MESSAGE_ERROR("", action, "can't find ID in users_companies table");
 						}
 					} // --- action == "AJAX_commentOnCompanyInNewsFeed"
@@ -7306,8 +6428,6 @@ int main()
 							ost << "\"description\": \"users_university.id [" << newsFeedMessageID << "] is not exists\"";
 							ost << "}";
 
-							CLog	log;
-
 							MESSAGE_ERROR("", action, "can't find ID in users_university table");
 						}
 					} // --- action == "AJAX_commentOnScienceDegreeInNewsFeed"
@@ -7321,10 +6441,7 @@ int main()
 						}
 						else
 						{
-							{
-								CLog	log;
-								MESSAGE_ERROR("", action, "defining company(id: " + messageOwnerID + ") admin userID");
-							}
+							MESSAGE_ERROR("", action, "defining company(id: " + messageOwnerID + ") admin userID");
 
 							messageOwnerID = "";
 
@@ -7360,18 +6477,12 @@ int main()
 								ost << "INSERT INTO `users_notification` (`userID`, `actionTypeId`, `actionId`, `eventTimestamp`) VALUES ('" << replyUserID << "', \"19\", '" << feed_message_comment_id << "', UNIX_TIMESTAMP() );";
 								if(db.InsertQuery(ost.str()))
 								{
-									{
-										CLog	log;
-										MESSAGE_DEBUG("", action, "success comment submission to userID[" + replyUserID + "]");
-									}
+									MESSAGE_DEBUG("", action, "success comment submission to userID[" + replyUserID + "]");
 
 								}
 								else
 								{
-									{
-										CLog	log;
-										MESSAGE_ERROR("", action, "inserting into users_notification table");
-									}
+									MESSAGE_ERROR("", action, "inserting into users_notification table");
 								}
 							}
 
@@ -7383,10 +6494,7 @@ int main()
 						}
 						else
 						{
-							{
-								CLog	log;
-								MESSAGE_ERROR("", action, "inserting into feed_message_comment");
-							}
+							MESSAGE_ERROR("", action, "inserting into feed_message_comment");
 
 							ost.str("");
 							ost << "{";
@@ -7397,10 +6505,7 @@ int main()
 					}
 					else
 					{
-						{
-							CLog	log;
-							MESSAGE_ERROR("", action, "finding commenting message owner");
-						}
+						MESSAGE_ERROR("", action, "finding commenting message owner");
 
 						ost.str("");
 						ost << "{";
@@ -7472,25 +6577,17 @@ int main()
 			string		randomValue = GetRandom(4);
 			string 		userToCheck;
 
-			{
-				CLog	log;
-				log.Write(DEBUG, "action == regNewUser_checkUser: start");
-			}
+			MESSAGE_DEBUG("", action, "start");
 
 			userToCheck = indexPage.GetVarsHandler()->Get("regEmail"); 
 
 			if(CheckUserEmailExisting(userToCheck, &db)) {
-				{
-					CLog	log;
-					log.Write(DEBUG, "action == regNewUser_checkUser: login or email already registered");
-				}
+				MESSAGE_DEBUG("", action, "login or email already registered");
+
 				indexPage.RegisterVariableForce("result", "already used");
 			}
 			else {
-				{
-					CLog	log;
-					log.Write(DEBUG, "action == regNewUser_checkUser: login or email not yet exists");
-				}
+				MESSAGE_DEBUG("", action, "login or email not yet exists");
 				indexPage.RegisterVariableForce("result", "free");
 			}
 
@@ -7520,7 +6617,7 @@ int main()
 			}
 
 			friendID = indexPage.GetVarsHandler()->Get("userid");
-			if(friendID.length() && atol(friendID.c_str()))
+			if(friendID.length() && stol(friendID))
 			{
 				if(friendID != user.GetID())
 				{
@@ -7529,15 +6626,13 @@ int main()
 					ost << "SELECT `id` FROM `users_watched` WHERE `watched_userID`=\"" << friendID << "\" and `watching_userID`=\"" << user.GetID() << "\";";
 					if(db.Query(ost.str()))
 					{
-						string		profile_watched_id = db.Get(0, "id");
+						auto		profile_watched_id = db.Get(0, "id");
 
 						ost.str("");
 						ost << "update `users_watched` set `eventTimestamp`=UNIX_TIMESTAMP() WHERE `id`='" << profile_watched_id << "';";
 						db.Query(ost.str());
 						if(db.isError())
 						{
-							CLog	log;
-
 							MESSAGE_ERROR("", action, "updating table users_watched");
 						}
 					}
@@ -7547,8 +6642,6 @@ int main()
 						ost << "insert `users_watched` (`watched_userID`, `watching_userID`, `eventTimestamp`) VALUE (\"" << friendID << "\", \"" << user.GetID() << "\", UNIX_TIMESTAMP());";
 						if(!db.InsertQuery(ost.str()))
 						{
-							CLog	log;
-
 							MESSAGE_ERROR("", action, "inserting into table users_watched");
 						}
 					}
@@ -7670,8 +6763,6 @@ int main()
 				}
 				else
 				{
-					CLog	log;
-
 					MESSAGE_ERROR("", action, "user not found , not activated or blocked");
 				}
 			}
@@ -7869,7 +6960,7 @@ int main()
 			{
 				MESSAGE_ERROR("", action, "(not an error, severity should be monitor) registered user(" + user.GetLogin() + ") attempts to access login page, redirect to default page");
 
-				indexPage.Redirect("/" + GetDefaultActionFromUserType(&user, &db) + "?rand=" + GetRandom(10));
+				indexPage.Redirect("/" + config.GetFromFile("default_action", user.GetType()) + "?rand=" + GetRandom(10));
 			}
 
 			MESSAGE_DEBUG("", action, "finish");
@@ -7888,8 +6979,7 @@ int main()
 
 				if(!indexPage.Cookie_Expire())
 				{
-					CLog	log;
-					log.Write(ERROR, string(__func__) + "[" + to_string(__LINE__) + "] in session expiration");
+					MESSAGE_ERROR("", action, "session expiration");
 				} // --- if(!indexPage.Cookie_Expire())
 			}
 
@@ -7922,16 +7012,12 @@ int main()
 			CUser		user;
 			ostringstream	ost1, ostResult;
 
-			{
-				CLog	log;
-				log.Write(DEBUG, string(__func__) + string("[") + to_string(__LINE__) + "]" + action + ": start");
-			}
+			MESSAGE_DEBUG("", action, "start");
 
 			sessid = indexPage.GetCookie("sessid");
 			if(sessid.length() < 5)
 			{
-				CLog	log;
-				log.Write(DEBUG, string(__func__) + string("[") + to_string(__LINE__) + "]" + action + ": with session id derived FROM cookies");
+				MESSAGE_DEBUG("", action, "session id derived FROM cookies");
 
 				ostResult.str("");
 				ostResult << "{";
@@ -7982,10 +7068,7 @@ int main()
 						CMailLocal	mail;
 						string		activator_id = GetRandom(20);
 
-						{
-							CLog	log;
-							MESSAGE_DEBUG("", action, "" + action + ": sending mail message with password to user (" + user.GetLogin() + ")");
-						}
+						MESSAGE_DEBUG("", action, "" + action + ": sending mail message with password to user (" + user.GetLogin() + ")");
 
 						db.Query("INSERT INTO `activators` SET `id`=\"" + activator_id + "\", `user`=\"" + user.GetEmail() + "\", `type`=\"password_recovery\", `date`=NOW();");
 						if(db.isError())
@@ -8030,10 +7113,7 @@ int main()
 				throw CExceptionHTML("Template file was missing");
 			}
 
-			{
-				CLog	log;
-				log.Write(DEBUG, string(__func__) + string("[") + to_string(__LINE__) + "]" + action + ": finish");
-			}
+			MESSAGE_DEBUG("", "", "finish");
 		}
 
 		if(action == "AJAX_recoverPassword")
@@ -8183,10 +7263,11 @@ int main()
 						{
 							if((password != user.GetPasswd()) || (user.GetPasswd() == ""))
 							{
-								if(db.Query("SELECT * FROM `users_passwd` WHERE `userID`=\"" + user.GetID() + "\" and `passwd`=\"" + password + "\";"))
+								auto	passwd_change_timestamp = GetValueFromDB("SELECT `eventTimestamp` FROM `users_passwd` WHERE `userID`=" + quoted(user.GetID()) + " AND `eventTimestamp`>(SELECT `eventTimestamp` FROM `users_passwd` WHERE `passwd`=" + quoted(password) + " and `userID`=" + quoted(user.GetID()) + ") ORDER BY `eventTimestamp` ASC LIMIT 0,1", &db);
+								if(passwd_change_timestamp.length())
 								{
 									// --- earlier password is user for user login
-									error_message.push_back(make_pair("description", "этот пароль был изменен " + GetHumanReadableTimeDifferenceFromNow(db.Get(0, "eventTimestamp"))));
+									error_message.push_back(make_pair("description", "этот пароль был изменен " + GetHumanReadableTimeDifferenceFromNow(passwd_change_timestamp)));
 									MESSAGE_DEBUG("", action, "old password has been used for user [" + user.GetLogin() + "] login");
 								}
 								else
@@ -8202,7 +7283,7 @@ int main()
 								MESSAGE_DEBUG("", action, "" + action + ": switching session (" + sessid + ") FROM Guest to user (" + user.GetLogin() + ")");
 
 								// FlawFinder: ignore
-								auto ra = getenv("REMOTE_ADDR");
+								auto ra = getenv("REMOTE_ADDR");    /* Flawfinder: ignore */
 
 								db.Query("UPDATE `sessions` SET `user_id`=\"" + user.GetID() + "\", `ip`=\"" + ra + "\", `expire`=\"" + (rememberMe == "remember-me" ? "0" : to_string(SESSION_LEN * 60)) + "\" WHERE `id`=\"" + sessid + "\";");
 
@@ -8224,11 +7305,11 @@ int main()
 									indexPage.RegisterVariableForce("loginUser", user.GetLogin());
 									indexPage.RegisterVariableForce("menu_main_active", "active");
 
-									MESSAGE_DEBUG("", action, "redirect to \"/" + GetDefaultActionFromUserType(&user, &db) + "?rand=xxxxxx\"");
+									MESSAGE_DEBUG("", action, "redirect to \"/" + config.GetFromFile("default_action", user.GetType()) + "?rand=xxxxxx\"");
 
 									success_message = 	"\"result\": \"success\","
 														"\"description\": \"\","
-														"\"url\": \"/" + GetDefaultActionFromUserType(&user, &db) + "?rand=" + GetRandom(10) + "\"";
+														"\"url\": \"/" + config.GetFromFile("default_action", user.GetType()) + "?rand=" + GetRandom(10) + "\"";
 								}
 							}
 						}
@@ -8359,13 +7440,13 @@ int main()
 								indexPage.RegisterVariableForce("loginUser", user.GetLogin());
 								indexPage.RegisterVariableForce("menu_main_active", "active");
 
-								MESSAGE_DEBUG("", action, "redirect to \"/" + GetDefaultActionFromUserType(&user, &db) + "?rand=xxxxxx\"");
+								MESSAGE_DEBUG("", action, "redirect to \"/" + config.GetFromFile("default_action", "guest") + "?rand=xxxxxx\"");
 
 								ostResult.str("");
 								ostResult << "{";
 								ostResult << "\"result\": \"success\",";
 								ostResult << "\"description\": \"\",";
-								ostResult << "\"url\": \"/" + GetDefaultActionFromUserType(&user, &db) + "?rand=" << GetRandom(10) << "\"";
+								ostResult << "\"url\": \"/" + config.GetFromFile("default_action", "guest") + "?rand=" << GetRandom(10) << "\"";
 								ostResult << "}";
 							}
 						} // if(password != user.GetPasswd())
@@ -8458,7 +7539,7 @@ int main()
 									MESSAGE_DEBUG("", action, "check captcha success");
 								}
 
-								remoteIP = getenv("REMOTE_ADDR");
+								remoteIP = getenv("REMOTE_ADDR");    /* Flawfinder: ignore */
 
 								affected = db.Query("DELETE FROM `captcha` WHERE `purpose`='regNewUser' and `code`=\"" + regSecurityCode + "\" and `session`=\"" + sessid + "\";");
 								if(affected != 0)
@@ -8471,7 +7552,7 @@ int main()
 								userTemporary.SetEmail(regEmail);
 								userTemporary.SetPasswd(regPassword);
 								userTemporary.SetType("user");
-								userTemporary.SetIP(getenv("REMOTE_ADDR"));
+								userTemporary.SetIP(getenv("REMOTE_ADDR"));    /* Flawfinder: ignore */
 								userTemporary.SetLng(indexPage.GetLanguage());
 								userTemporary.SetDB(&db);
 								userTemporary.Create();
@@ -8543,8 +7624,6 @@ int main()
 
 					if(!indexPage.SetTemplate("weberror_activator_notfound.htmlt"))
 					{
-						CLog	log;
-
 						MESSAGE_ERROR("", action, "template file weberror_activator_notfound.htmlt was missing");
 						throw CExceptionHTML("Template file was missing");
 					}
@@ -8567,7 +7646,6 @@ int main()
 
 						if(!indexPage.SetTemplate("weberror_cookie_disabled.htmlt.htmlt"))
 						{
-							CLog	log;
 							MESSAGE_ERROR("", action, "template weberror_cookie_disabled.htmlt can't be found");
 							throw CExceptionHTML("cookies");
 						}
@@ -8595,7 +7673,6 @@ int main()
 
 							if(!user.isActive()) 
 							{
-								CLog	log;
 								MESSAGE_ERROR("", action, "user [" + user.GetLogin() + "] not activated");
 
 								if(!indexPage.SetTemplate("weberror_user_not_activated.htmlt"))
@@ -8613,11 +7690,11 @@ int main()
 
 								// --- 2delete if login works till Nov 1
 								// ost1.str("");
-								// ost1 << "update `users` set `last_online`=NOW(), `ip`='" << getenv("REMOTE_ADDR") << "' WHERE `login`='" << user.GetLogin() << "';";
+								// ost1 << "update `users` set `last_online`=NOW(), `ip`='" << getenv("REMOTE_ADDR") << "' WHERE `login`='" << user.GetLogin() << "';";    /* Flawfinder: ignore */
 								// db.Query(ost1.str());
 
 								ost1.str("");
-								ost1 << "update `sessions` set `user_id`='" << user.GetID() << "', `ip`='" << getenv("REMOTE_ADDR") << "', `expire`=" << (rememberMe == "remember-me" ? 0 : SESSION_LEN * 60) << " WHERE `id`='" << sessid << "';";
+								ost1 << "update `sessions` set `user_id`='" << user.GetID() << "', `ip`='" << getenv("REMOTE_ADDR") << "', `expire`=" << (rememberMe == "remember-me" ? 0 : SESSION_LEN * 60) << " WHERE `id`='" << sessid << "';";    /* Flawfinder: ignore */
 								db.Query(ost1.str());
 
 								if(rememberMe == "remember-me") 
@@ -8648,7 +7725,7 @@ int main()
 			{
 				MESSAGE_ERROR("", action, "(not an error, severity should be monitor) registered user(" + user.GetLogin() + ") attempts to access activateNewUser page, redirect to default page");
 
-				indexPage.Redirect("/" + GetDefaultActionFromUserType(&user, &db) + "?rand=" + GetRandom(10));
+				indexPage.Redirect("/" + config.GetFromFile("default_action", user.GetType()) + "?rand=" + GetRandom(10));
 			}
 
 
@@ -8897,583 +7974,6 @@ int main()
 
 			MESSAGE_DEBUG("", action, "finish");
 		}
-/*
-		if(action == "JSON_getUserProfile")
-		{
-			ostringstream	ost, ostResult;
-			int				affected;
-			string			userID, name, nameLast, age, sex, birthday, birthdayAccess, cv, address, phone, email, isBlocked, avatarFileName, avatarFolderName, current_company;
-			auto			country_code = ""s;
-			string			appliedVacanciesRender = "";
-
-
-			if(user.GetLogin() == "Guest")
-			{
-				MESSAGE_DEBUG("", action, "re-login required");
-
-				indexPage.Redirect("/autologin?rand=" + GetRandom(10));
-			}
-
-			userID = CheckHTTPParam_Number(indexPage.GetVarsHandler()->Get("id"));
-
-			if(userID.empty()) userID = user.GetID();
-
-			ostResult.str("");
-			ost.str("");
-			ost << "SELECT "
-						"`users`.`id` 						as `users_id`, "
-						"`users`.`name` 					as `users_name`, "
-						"`users`.`nameLast`					as `users_nameLast`, "
-						"`users`.`cv` 						as `users_cv`, "
-						"`users_passwd`.`passwd` 			as `users_passwd_passwd`, "
-						"`users`.`address`					as `users_address`, "
-						"`users`.`country_code`				as `users_country_code`, "
-						"`users`.`phone`					as `users_phone`, "
-						"`users`.`email`					as `users_email`, "
-						"`users`.`sex`						as `users_sex`, "
-						"`users`.`birthday`					as `users_birthday`, "
-						"`users`.`birthdayAccess`			as `users_birthdayAccess`, "
-						"`users`.`appliedVacanciesRender`	as `users_appliedVacanciesRender`, "
-						"`users`.`isblocked`				as `users_isblocked` "
-					"FROM `users` "
-					"INNER JOIN `users_passwd` ON `users_passwd`.`userID`=`users`.`id` "
-					"WHERE `users`.`id`='" << userID << "' AND `users_passwd`.`isActive`='true';";
-			affected = db.Query(ost.str());
-			if(affected)
-			{
-				map<string, string>		skillMap;
-
-				name = db.Get(0, "users_name");
-				nameLast = db.Get(0, "users_nameLast");
-				cv = db.Get(0, "users_cv");				
-				if(cv == "") cv = "Напишите несколько слов о себе";
-				// pass = db.Get(0, "users_passwd_passwd");
-				address = db.Get(0, "users_address");
-				country_code = db.Get(0, "users_country_code");
-				phone = db.Get(0, "users_phone");
-				email = db.Get(0, "users_email");
-				sex = db.Get(0, "users_sex");
-				isBlocked = db.Get(0, "users_isblocked");
-				birthday = db.Get(0, "users_birthday");
-				birthdayAccess = db.Get(0, "users_birthdayAccess");
-				appliedVacanciesRender = db.Get(0, "users_appliedVacanciesRender");
-
-				if((userID != user.GetID()) && (birthdayAccess == "private"))
-					birthday = "";
-
-				if(user.GetID() == userID)
-				{
-					// --- don't hide anything
-				}
-				else
-				{
-					if(phone.length() > 2)
-						phone = MaskSymbols(phone, 0, phone.length() - 2);
-					if(email.length() > 10)
-						email = MaskSymbols(email, 4, email.length() - 5);
-				}
-
-				ostResult << "{" 
-					<< "\"result\": \"success\","
-					<< "\"users\": [{"
-					<< "\"userID\": \"" << userID << "\","
-					<< "\"name\": \"" << name << "\","
-					<< "\"nameLast\": \"" << nameLast << "\","
-					<< "\"email\": \"" << email << "\","
-					<< "\"cv\": \"" << cv << "\","
-					<< "\"address\": \"" << address << "\","
-					<< "\"country_code\": \"" << country_code << "\","
-					<< "\"phone\": \"" << phone << "\","
-					<< "\"isBlocked\": \"" << isBlocked << "\","
-					<< "\"sex\": \"" << sex << "\","
-					<< "\"appliedVacanciesRender\": \"" << appliedVacanciesRender << "\","
-					<< "\"birthday\": \"" << birthday << "\","
-					<< "\"birthdayAccess\": \"" << birthdayAccess << "\","
-
-					<< "\"school\": [";
-				ost.str("");
-				ost << "\
-	SELECT `users_school`.`id` as 'users_school_id', `school`.`title` as 'school_title', `geo_locality`.`title` as 'school_locality',  `users_school`.`occupation_start` as 'users_school_occupation_start', `users_school`.`occupation_finish` as 'users_school_occupation_finish', \
-	`school`.`id` as 'school_id', `school`.`logo_folder` as 'school_logo_folder', `school`.`logo_filename` as 'school_logo_filename' \
-	FROM `users_school` \
-	RIGHT JOIN `school` ON `users_school`.`school_id`=`school`.`id` \
-	RIGHT JOIN `geo_locality` ON `school`.`geo_locality_id`=`geo_locality`.`id` \
-	where `users_school`.`user_id`=\"" << userID << "\";";
-				affected = db.Query(ost.str());
-				if(affected)
-				{
-						for(auto i = 0; i < affected; i++) 
-						{
-							ostResult << (i ? "," : "")
-							<< "{"
-							<< "\"schoolID\":\"" << db.Get(i, "users_school_id") << "\","
-							<< "\"schoolInternalID\":\"" << db.Get(i, "school_id") << "\","
-							<< "\"schoolPhotoFolder\":\"" << db.Get(i, "school_logo_folder") << "\","
-							<< "\"schoolPhotoFilename\":\"" << db.Get(i, "school_logo_filename") << "\","
-							<< "\"schoolTitle\":\"" << db.Get(i, "school_title") << "\","
-							<< "\"schoolLocality\":\"" << db.Get(i, "school_locality") << "\","
-							<< "\"schoolOccupationStart\":\"" << db.Get(i, "users_school_occupation_start") << "\","
-							<< "\"schoolOccupationFinish\":\"" << db.Get(i, "users_school_occupation_finish") << "\""
-							<< "}";
-						}
-				}
-				else 
-				{
-					MESSAGE_DEBUG("", action, "DEBUG: school path is empty");
-				}
-				ostResult << "],";
-
-				ostResult << "\"language\": [";
-				ost.str("");
-				ost << "SELECT `users_language`.`id` as 'users_language_id', `users_language`.`level` as 'language_level', ";
-				ost << "`language`.`id` as 'language_id', `language`.`title` as 'language_title', ";
-				ost << "`language`.`logo_folder` as 'language_logo_folder', `language`.`logo_filename` as 'language_logo_filename' ";
-				ost << "FROM `users_language` ";
-				ost << "RIGHT JOIN `language` ON `users_language`.`language_id`=`language`.`id` ";
-				ost << "WHERE `users_language`.`user_id`=\"" << userID << "\";";
-				affected = db.Query(ost.str());
-				if(affected)
-				{
-						for(auto i = 0; i < affected; i++) 
-						{
-							ostResult << (i ? "," : "")
-							<< "{"
-							<< "\"languageID\":\"" << db.Get(i, "users_language_id") << "\","
-							<< "\"languageInternalID\":\"" << db.Get(i, "language_id") << "\","
-							<< "\"languagePhotoFolder\":\"" << db.Get(i, "language_logo_folder") << "\","
-							<< "\"languagePhotoFilename\":\"" << db.Get(i, "language_logo_filename") << "\","
-							<< "\"languageTitle\":\"" << db.Get(i, "language_title") << "\","
-							<< "\"languageLevel\":\"" << db.Get(i, "language_level") << "\""
-							<< "}";
-						}
-				}
-				else 
-				{
-					MESSAGE_DEBUG("", action, "DEBUG: language path is empty");
-				}
-				ostResult << "],";
-
-				skillMap.clear();
-				ostResult << "\"skill\": [";
-				ost.str("");
-				ost << "\
-	SELECT `users_skill`.`id` as 'users_skill_id', `skill`.`title` as 'skill_title' \
-	FROM `users_skill` \
-	RIGHT JOIN `skill` ON `users_skill`.`skill_id`=`skill`.`id` \
-	where `users_skill`.`user_id`=\"" << userID << "\";";
-				affected = db.Query(ost.str());
-				if(affected)
-				{
-						for(auto i = 0; i < affected; i++) 
-						{
-							skillMap[db.Get(i, "users_skill_id")] = db.Get(i, "skill_title");
-						}
-						for(auto it = skillMap.begin(); it != skillMap.end(); ++it) 
-						{
-							ostResult << ((it != skillMap.begin()) ? "," : "");
-							ostResult << "{";
-							ostResult << "\"skillID\":\"" << it->first << "\",";
-							ostResult << "\"skillTitle\":\"" << it->second << "\",";
-
-							ostResult << "\"skillConfirmed\":[";
-							ost.str("");
-							ost << "SELECT * FROM `skill_confirmed` WHERE `users_skill_id`=\"" << it->first << "\";";
-							if(int affected1 = db.Query(ost.str()))
-							{
-								for(auto i = 0; i < affected1; ++i)
-								{
-									ostResult << (i ? "," : "");
-									ostResult << db.Get(i, "approver_userID");
-								}
-							}
-							ostResult << "]";
-
-							ostResult << "}";
-						}
-				}
-				else 
-				{
-					MESSAGE_DEBUG("", action, "DEBUG: language path is empty");
-				}
-				ostResult << "],";
-
-				ostResult << "\"university\": [";
-				ost.str("");
-				ost << "\
-	SELECT `users_university`.`id` as 'users_university_id', `university`.`title` as 'university_title', `users_university`.`degree` as 'university_degree', `geo_region`.`title` as 'university_region', `users_university`.`occupation_start` as 'users_university_occupation_start', `users_university`.`occupation_finish` as 'users_university_occupation_finish', \
-	`university`.`id` as 'university_id', `university`.`logo_folder` as 'university_logo_folder', `university`.`logo_filename` as 'university_logo_filename' \
-	FROM `users_university` \
-	RIGHT JOIN `university` ON `users_university`.`university_id`=`university`.`id` \
-	RIGHT JOIN `geo_region` ON `university`.`geo_region_id`=`geo_region`.`id` \
-	where `users_university`.`user_id`=\"" << userID << "\";";
-				affected = db.Query(ost.str());
-				if(affected)
-				{
-						for(auto i = 0; i < affected; i++) 
-						{
-							ostResult << (i ? "," : "")
-							<< "{"
-							<< "\"universityID\":\"" << db.Get(i, "users_university_id") << "\","
-							<< "\"universityInternalID\":\"" << db.Get(i, "university_id") << "\","
-							<< "\"universityPhotoFolder\":\"" << db.Get(i, "university_logo_folder") << "\","
-							<< "\"universityPhotoFilename\":\"" << db.Get(i, "university_logo_filename") << "\","
-							<< "\"universityTitle\":\"" << db.Get(i, "university_title") << "\","
-							<< "\"universityRegion\":\"" << db.Get(i, "university_region") << "\","
-							<< "\"universityDegree\":\"" << db.Get(i, "university_degree") << "\","
-							<< "\"universityOccupationStart\":\"" << db.Get(i, "users_university_occupation_start") << "\","
-							<< "\"universityOccupationFinish\":\"" << db.Get(i, "users_university_occupation_finish") << "\""
-							<< "}";
-						}
-				}
-				else 
-				{
-					MESSAGE_DEBUG("", action, "DEBUG: university path is empty");
-				}
-				ostResult << "],";
-
-				ostResult << "\"certifications\": [";
-				ost.str("");
-				ost << "SELECT `users_certifications`.`id` as 'users_certifications_id', `company`.`name` as 'certification_vendors_title', `certification_tracks`.`title` as 'certification_tracks_title', `users_certifications`.`certification_number` as 'users_certifications_certification_number', ";
-				ost << "`certification_tracks`.`id` as 'certification_id', `certification_tracks`.`logo_folder` as 'certification_logo_folder', `certification_tracks`.`logo_filename` as 'certification_logo_filename' ";
-				ost << "FROM `users_certifications` ";
-				ost << "RIGHT JOIN `certification_tracks` on `users_certifications`.`track_id`=`certification_tracks`.`id` ";
-				ost << "RIGHT JOIN `company` ON `certification_tracks`.`vendor_id`=`company`.`id` ";
-				ost << "WHERE `users_certifications`.`user_id`=\"" << userID << "\";";
-				affected = db.Query(ost.str());
-				if(affected)
-				{
-						for(auto i = 0; i < affected; i++, current_company = "0") 
-						{
-							ostResult << (i ? "," : "")
-							<< "{"
-							<< "\"certificationID\":\"" << db.Get(i, "users_certifications_id") << "\","
-							<< "\"certificationInternalID\":\"" << db.Get(i, "certification_id") << "\","
-							<< "\"certificationPhotoFolder\":\"" << db.Get(i, "certification_logo_folder") << "\","
-							<< "\"certificationPhotoFilename\":\"" << db.Get(i, "certification_logo_filename") << "\","
-							<< "\"certificationVendor\":\"" << db.Get(i, "certification_vendors_title") << "\","
-							<< "\"certificationTrack\":\"" << db.Get(i, "certification_tracks_title") << "\","
-							<< "\"certificationNumber\":\"" << db.Get(i, "users_certifications_certification_number") << "\""
-							<< "}";
-						}
-				}
-				else 
-				{
-					MESSAGE_DEBUG("", action, "DEBUG: certification path is empty");
-				}
-				ostResult << "],";
-
-				ostResult << "\"courses\": [";
-				ost.str("");
-				ost << "SELECT `users_courses`.`id` as 'users_courses_id', `company`.`name` as 'course_vendors_title', `certification_tracks`.`title` as 'course_tracks_title', `users_courses`.`rating` as 'users_courses_rating',  `users_courses`.`eventTimestamp` as 'users_courses_eventtimestamp', ";
-				ost << "`certification_tracks`.`id` as 'course_id', `certification_tracks`.`logo_folder` as 'course_logo_folder', `certification_tracks`.`logo_filename` as 'course_logo_filename' ";
-				ost << "FROM `users_courses` ";
-				ost << "RIGHT JOIN `certification_tracks` on `users_courses`.`track_id`=`certification_tracks`.`id` ";
-				ost << "RIGHT JOIN `company` ON `certification_tracks`.`vendor_id`=`company`.`id` ";
-				ost << "WHERE `users_courses`.`user_id`=\"" << userID << "\";";
-				affected = db.Query(ost.str());
-				if(affected)
-				{
-						for(auto i = 0; i < affected; i++, current_company = "0") 
-						{
-							ostResult << (i ? "," : "")
-							<< "{"
-							<< "\"courseID\":\"" << db.Get(i, "users_courses_id") << "\","
-							<< "\"courseInternalID\":\"" << db.Get(i, "course_id") << "\","
-							<< "\"coursePhotoFolder\":\"" << db.Get(i, "course_logo_folder") << "\","
-							<< "\"coursePhotoFilename\":\"" << db.Get(i, "course_logo_filename") << "\","
-							<< "\"courseVendor\":\"" << db.Get(i, "course_vendors_title") << "\","
-							<< "\"courseTrack\":\"" << db.Get(i, "course_tracks_title") << "\","
-							<< "\"courseRating\":\"" << db.Get(i, "users_courses_rating") << "\","
-							<< "\"eventTimestamp\":\"" << db.Get(i, "users_courses_eventtimestamp") << "\""
-							<< "}";
-						}
-				}
-				else 
-				{
-					MESSAGE_DEBUG("", action, "DEBUG: course path is empty");
-				}
-				ostResult << "],";
-
-				ostResult << "\"books\": [";
-				ost.str("");
-				ost << "SELECT `users_books`.`id` as 'users_books_id', `book`.`id` as 'book_id', `book`.`title` as 'book_title', `book`.`isbn10` as 'book_isbn10', `book`.`isbn13` as 'book_isbn13', `book`.`coverPhotoFolder` as 'book_coverPhotoFolder', `book`.`coverPhotoFilename` as 'book_coverPhotoFilename',  "
-						"`book_author`.`name` as `book_author_name`, `users_books`.`rating` as `users_books_rating` , `users_books`.`bookReadTimestamp` as `users_books_bookReadTimestamp` "
-						"FROM `users_books` "
-						"RIGHT JOIN `book`		ON `users_books`.`bookID`=`book`.`id` "
-						"RIGHT JOIN `book_author` ON `book`.`authorID`=`book_author`.`id` "
-						"where `users_books`.`userID`=\"" << userID << "\";";
-				affected = db.Query(ost.str());
-				if(affected)
-				{
-						for(auto i = 0; i < affected; i++) 
-						{
-							ostResult << (i ? "," : "")
-							<< "{"
-							<< "\"id\":\"" << db.Get(i, "users_books_id") << "\","
-							<< "\"bookID\":\"" << db.Get(i, "book_id") << "\","
-							<< "\"bookTitle\":\"" << db.Get(i, "book_title") << "\","
-							<< "\"bookAuthorName\":\"" << db.Get(i, "book_author_name") << "\","
-							<< "\"bookRating\":\"" << db.Get(i, "users_books_rating") << "\","
-							<< "\"bookReadTimestamp\":\"" << db.Get(i, "users_books_bookReadTimestamp") << "\","
-							<< "\"bookISBN10\":\"" << db.Get(i, "book_isbn10") << "\","
-							<< "\"bookISBN13\":\"" << db.Get(i, "book_isbn13") << "\","
-							<< "\"bookCoverPhotoFolder\":\"" << db.Get(i, "book_coverPhotoFolder") << "\","
-							<< "\"bookCoverPhotoFilename\":\"" << db.Get(i, "book_coverPhotoFilename") << "\""
-							<< "}";
-						}
-				}
-				else 
-				{
-					MESSAGE_DEBUG("", action, "book path is empty");
-				}
-				ostResult << "],";
-
-				ostResult << "\"vacancyApplied\": [";
-				affected = db.Query("SELECT * FROM `company_candidates` WHERE `user_id`=\"" + userID + "\";");
-				if(affected)
-				{
-						struct ItemClass
-						{
-							string		id;
-							string		vacancy_id;
-							string		user_id;
-							string		answer1;
-							string		answer2;
-							string		answer3;
-							string		language1;
-							string		language2;
-							string		language3;
-							string		skill1;
-							string		skill2;
-							string		skill3;
-							string		description;
-							string		status;
-							string		eventTimestamp;
-						};
-
-						vector<ItemClass>		itemsList;
-						int						itemsCount = affected;
-						string					tempBuffer = "";
-
-						for(auto i = 0; i < itemsCount; ++i)
-						{
-							ItemClass   item;
-
-							item.id = db.Get(i, "id");
-							item.vacancy_id = db.Get(i, "vacancy_id");
-							item.user_id = db.Get(i, "user_id");
-							item.answer1 = db.Get(i, "answer1");
-							item.answer2 = db.Get(i, "answer2");
-							item.answer3 = db.Get(i, "answer3");
-							item.language1 = db.Get(i, "language1");
-							item.language2 = db.Get(i, "language2");
-							item.language3 = db.Get(i, "language3");
-							item.skill1 = db.Get(i, "skill1");
-							item.skill2 = db.Get(i, "skill2");
-							item.skill3 = db.Get(i, "skill3");
-							item.description = db.Get(i, "description");
-							item.status = db.Get(i, "status");
-							item.eventTimestamp = db.Get(i, "eventTimestamp");
-
-							itemsList.push_back(item);
-						}
-
-						for(auto i = 0; i < affected; i++) 
-						{
-
-							if(db.Query("SELECT * FROM `company_vacancy` WHERE `id`=\"" + itemsList[i].vacancy_id + "\";"))
-							{
-								string 		company_id = db.Get(0, "company_id");
-
-								if(tempBuffer.length()) tempBuffer += ",";
-
-								tempBuffer += "{"
-											"\"id\":\"" + itemsList[i].id + "\","
-											"\"vacancy\":[" + GetOpenVacanciesInJSONFormat("SELECT * FROM `company_vacancy` WHERE `id`=\"" + itemsList[i].vacancy_id + "\";", &db) + "],"
-											"\"company\":[" + GetCompanyListInJSONFormat("SELECT * FROM `company` WHERE `id`=\"" + company_id + "\";", &db, NULL) + "],"
-											"\"user_id\":\"" + itemsList[i].user_id + "\","
-											"\"answer1\":\"" + itemsList[i].answer1 + "\","
-											"\"answer2\":\"" + itemsList[i].answer2 + "\","
-											"\"answer3\":\"" + itemsList[i].answer3 + "\","
-											"\"language1\":\"" + itemsList[i].language1 + "\","
-											"\"language2\":\"" + itemsList[i].language2 + "\","
-											"\"language3\":\"" + itemsList[i].language3 + "\","
-											"\"skill1\":\"" + itemsList[i].skill1 + "\","
-											"\"skill2\":\"" + itemsList[i].skill2 + "\","
-											"\"skill3\":\"" + itemsList[i].skill3 + "\","
-											"\"description\":\"" + itemsList[i].description + "\","
-											"\"status\":\"" + itemsList[i].status + "\","
-											"\"eventTimestamp\":\"" + itemsList[i].eventTimestamp + "\""
-											"}";
-							}
-							else
-							{
-								CLog	log;
-								MESSAGE_ERROR("", action, "can't find vacancy.id[" + itemsList[i].vacancy_id + "]");
-							}
-
-						}
-						ostResult << tempBuffer;
-				}
-				else 
-				{
-					MESSAGE_DEBUG("", action, "DEBUG: recommendation path is empty");
-				}
-				ostResult << "],";
-
-				ostResult << "\"subscriptions\": [";
-				affected = db.Query("SELECT * FROM `users_subscriptions` WHERE `user_id`=\"" + userID + "\";");
-				if(affected)
-				{
-						struct ItemClass
-						{
-							string		id;
-							string		user_id;
-							string		entity_type;
-							string		entity_id;
-							string		eventTimestamp;
-						};
-
-						vector<ItemClass>		itemsList;
-						int						itemsCount = affected;
-						string					tempBuffer = "";
-
-						for(auto i = 0; i < itemsCount; ++i)
-						{
-							ItemClass   item;
-
-							item.id = db.Get(i, "id");
-							item.user_id = db.Get(i, "user_id");
-							item.entity_type = db.Get(i, "entity_type");
-							item.entity_id = db.Get(i, "entity_id");
-							item.eventTimestamp = db.Get(i, "eventTimestamp");
-
-							itemsList.push_back(item);
-						}
-
-						for(auto i = 0; i < affected; i++) 
-						{
-							string 		tmp;
-
-							if(itemsList[i].entity_type == "company")
-								tmp = GetCompanyListInJSONFormat("SELECT * FROM `company` WHERE `id`=\"" + itemsList[i].entity_id + "\" AND `isBlocked`=\"N\";", &db, &user);
-							if(itemsList[i].entity_type == "group")
-								tmp = GetGroupListInJSONFormat("SELECT * FROM `groups` WHERE `id`=\"" + itemsList[i].entity_id + "\" AND `isBlocked`=\"N\";", &db, &user);
-
-
-							if(tmp.length())
-							{
-								if(tempBuffer.length()) tempBuffer += ",";
-								tempBuffer +="{"
-											 "\"id\":\"" + itemsList[i].id + "\","
-											 "\"" + itemsList[i].entity_type + "\":[" + tmp + "],"
-											 "\"user_id\":\"" + itemsList[i].user_id + "\","
-											 "\"entity_type\":\"" + itemsList[i].entity_type + "\","
-											 "\"entity_id\":\"" + itemsList[i].entity_id + "\","
-											 "\"eventTimestamp\":\"" + itemsList[i].eventTimestamp + "\""
-											 "}";
-							}
-							else
-							{
-								CLog log;
-								MESSAGE_DEBUG("", action, "subscription entity(" + itemsList[i].entity_type + ": " + itemsList[i].entity_id + ") doesn't exists or blocked");
-							}
-						}
-
-						ostResult << tempBuffer;
-				}
-				else 
-				{
-					MESSAGE_DEBUG("", action, "DEBUG: recommendation path is empty");
-				}
-				ostResult << "],";
-
-				ostResult << "\"recommendation\": [";
-				ost.str("");
-				ost << "SELECT * FROM `users_recommendation` WHERE `recommended_userID`=\"" << userID << "\";";
-				affected = db.Query(ost.str());
-				if(affected)
-				{
-						for(auto i = 0; i < affected; i++) 
-						{
-							ostResult << (i ? "," : "")
-							<< "{"
-							<< "\"recommendationID\":\"" << db.Get(i, "id") << "\","
-							<< "\"recommendationTitle\":\"" << db.Get(i, "title") << "\","
-							<< "\"recommendationRecommendedUserID\":\"" << db.Get(i, "recommended_userID") << "\","
-							<< "\"recommendationRecommendingUserID\":\"" << db.Get(i, "recommending_userID") << "\","
-							<< "\"recommendationTimestamp\":\"" << db.Get(i, "eventTimestamp") << "\","
-							<< "\"recommendationState\":\"" << db.Get(i, "state") << "\""
-							<< "}";
-						}
-				}
-				else 
-				{
-					MESSAGE_DEBUG("", action, "DEBUG: recommendation path is empty");
-				}
-				ostResult << "],";
-
-				ostResult << "\"companies\": [";
-				ost.str("");
-				ost << "SELECT `users_company`.`id` as `users_company_id`, `company`.`id` as `company_id`, `company`.`name` as `company_name`,`company`.`type` as `company_type`, `occupation_start`, `occupation_finish`, `current_company`, `responsibilities`, `company_position`.`title` as `title`, \
-		`company`.`logo_folder` as `company_logo_folder`,`company`.`logo_filename` as `company_logo_filename` \
-		FROM  `company` ,  `users_company` ,  `company_position` \
-		WHERE  `user_id` =  '" << userID << "' \
-		AND  `company`.`id` =  `users_company`.`company_id`  \
-		AND  `company_position`.`id` =  `users_company`.`position_title_id`  \
-		ORDER BY  `users_company`.`occupation_start` DESC ";
-				affected = db.Query(ost.str());
-				if(affected > 0) 
-				{
-						ostringstream	ost1, ost2, ost3, ost4;
-						string			occupationFinish;
-						ost1.str("");
-						ost2.str("");
-						ost3.str("");
-						ost4.str("");
-
-						for(auto i = 0; i < affected; i++, current_company = "0") 
-						{
-							ostResult << (i ? "," : "")
-							<< "{"
-							<< "\"companyID\":\"" << db.Get(i, "users_company_id") << "\","
-							<< "\"companyInternalID\":\"" << db.Get(i, "company_id") << "\","
-							<< "\"companyType\":\"" << db.Get(i, "company_type") << "\","
-							<< "\"companyName\":\"" << db.Get(i, "company_name") << "\","
-							<< "\"companyLogoFolder\":\"" << db.Get(i, "company_logo_folder") << "\","
-							<< "\"companyLogoFilename\":\"" << db.Get(i, "company_logo_filename") << "\","
-							<< "\"occupationStart\":\"" << db.Get(i, "occupation_start") << "\","
-							<< "\"occupationFinish\":\"" << db.Get(i, "occupation_finish") << "\","
-							<< "\"currentCompany\":\"" << db.Get(i, "current_company") << "\","
-							<< "\"title\":\"" << db.Get(i, "title") << "\","
-							<< "\"responsibilities\":\"" << db.Get(i, "responsibilities") << "\""
-							<< "}";
-						}
-				}
-				else 
-				{
-					MESSAGE_DEBUG("", action, "DEBUG: carrier path is empty");
-				}
-				ostResult << "]";
-				ostResult << "}]}";
-			}
-			else
-			{
-				MESSAGE_ERROR("", action, "can't find user.id(" + userID + ") with active password");
-
-				ostResult.str("");
-				ostResult << "{\"result\":\"error\", description:\"user not found\"}";
-			}
-
-			indexPage.RegisterVariableForce("result", ostResult.str());
-
-			if(!indexPage.SetTemplate("json_response.htmlt"))
-			{
-				MESSAGE_ERROR("", action, "template file json_response.htmlt was missing");
-				throw CException("Template file json_response.htmlt was missing");
-			}  // if(!indexPage.SetTemplate("JSON_getUserProfile.htmlt"))
-		}
-*/
 		if(action == "updateJobTitle")
 		{
 			string		newJobTitle, companyId;
@@ -9500,14 +8000,7 @@ int main()
 				{
 					string	titleId = db.Get(0, "id");
 
-					{
-						CLog	log;
-						ostringstream   ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": job title [" << newJobTitle << "] already exists, no need to update DB.";
-						log.Write(DEBUG, ost.str());
-					}
+					MESSAGE_DEBUG("", "", "job title [" + newJobTitle + "] already exists, no need to update DB.");
 
 					ost.str("");
 					ost << "update users_company set `position_title_id`='" << titleId << "' WHERE `user_id`='" << user.GetID() << "' and `id`='" << companyId << "'";
@@ -9523,29 +8016,15 @@ int main()
 					}
 					else
 					{
-						CLog	log;
-						ostringstream	ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": updating news_feed.";
-						log.Write(ERROR, ost.str());
+						MESSAGE_ERROR("", "", "updating news_feed.");
 					}
 
 				}
 				else
 				{
-					unsigned long	titleId;
+					MESSAGE_DEBUG("", "", "new job title [" + newJobTitle + "] needed to be added to DB");
 
-					{
-						CLog	log;
-						ostringstream	ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": new job title [" << newJobTitle << "] needed to be added to DB";
-						log.Write(DEBUG, ost.str());
-					}
-
-					titleId = db.InsertQuery("INSERT INTO `company_position` (`title`) VALUES (\"" + newJobTitle + "\");");
+					auto	titleId = db.InsertQuery("INSERT INTO `company_position` (`title`) VALUES (\"" + newJobTitle + "\");");
 					if(titleId)
 					{
 						ost.str("");
@@ -9562,23 +8041,12 @@ int main()
 						}
 						else
 						{
-							CLog	log;
-							ostringstream   ost;
-
-							ost.str("");
-							ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": updating news_feed.";
-							log.Write(ERROR, ost.str());
+							MESSAGE_ERROR("", "", "updating news_feed.");
 						}
-
 					}
 					else
 					{
-						CLog	log;
-						ostringstream   ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": insertion into company_position.ID (occupation [" << newJobTitle << "] can't be inserted)";
-						log.Write(ERROR, ost.str());
+						MESSAGE_ERROR("", "", "insertion into company_position.ID (occupation [" + newJobTitle + "] can't be inserted)");
 		
 						result = "{\"error\":\"success\",\"description\":\"occupation insertion error\"}";
 					}
@@ -9588,14 +8056,7 @@ int main()
 			}
 			else
 			{
-				{
-					CLog	log;
-					ostringstream	ost;
-
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": newJobTitle [" << newJobTitle << "] or companyId [" << companyId << "] is unknown/empty";
-					log.Write(DEBUG, ost.str());
-				}
+				MESSAGE_DEBUG("", "", "newJobTitle [" + newJobTitle + "] or companyId [" + companyId + "] is unknown/empty");
 			}
 
 			indexPage.RegisterVariableForce("result", result);
@@ -9613,10 +8074,11 @@ int main()
 		// --- updateCompanyName
 		if(action == "updateCompanyName")
 		{
-			ostringstream	ostFinal;
-			string			newCompanyName, companyId;
-
 			MESSAGE_DEBUG("", action, "start");
+
+			ostringstream	ostFinal;
+			auto 			newCompanyName = CheckHTTPParam_Text(indexPage.GetVarsHandler()->Get("value"));
+			auto 			user_company_id = CheckHTTPParam_Number(indexPage.GetVarsHandler()->Get("id"));
 
 			if(user.GetLogin() == "Guest")
 			{
@@ -9625,10 +8087,7 @@ int main()
 				indexPage.Redirect("/autologin?rand=" + GetRandom(10));
 			}
 
-			newCompanyName = CheckHTTPParam_Text(indexPage.GetVarsHandler()->Get("value"));
-			companyId = CheckHTTPParam_Number(indexPage.GetVarsHandler()->Get("id"));
-
-			if(newCompanyName.length() && companyId.length()) 
+			if(newCompanyName.length() && user_company_id.length()) 
 			{
 				ostringstream	ost;
 				int				affected;
@@ -9637,24 +8096,17 @@ int main()
 				ost << "SELECT * FROM `company` WHERE `name`=\"" << newCompanyName << "\";";
 				if((affected = db.Query(ost.str())) > 0)
 				{
-					string	companyName = db.Get(0, "id");
+					auto	companyName = db.Get(0, "id");
 
-					{
-						CLog	log;
-						ostringstream	ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": company [" << newCompanyName << "] already exists, no need to update DB.";
-						log.Write(DEBUG, ost.str());
-					}
+					MESSAGE_DEBUG("", "", "company [" + newCompanyName + "] already exists, no need to update DB.");
 
 					ost.str("");
-					ost << "update `users_company` set `company_id`=\"" << companyName << "\" WHERE `user_id`='" << user.GetID() << "' and `id`='" << companyId << "'";
+					ost << "update `users_company` set `company_id`=\"" << companyName << "\" WHERE `user_id`='" << user.GetID() << "' and `id`='" << user_company_id << "'";
 					db.Query(ost.str());
 
 					// --- Update live feed
 					ost.str("");
-					ost << "INSERT INTO `feed` (`title`, `userId`, `actionTypeId`, `actionId`, `eventTimestamp`) values(\"\",\"" << user.GetID() << "\", \"52\", \"" << companyId << "\", NOW())";
+					ost << "INSERT INTO `feed` (`title`, `userId`, `actionTypeId`, `actionId`, `eventTimestamp`) values(\"\",\"" << user.GetID() << "\", \"52\", \"" << user_company_id << "\", NOW())";
 					if(db.InsertQuery(ost.str()))
 					{
 						ostFinal.str("");
@@ -9665,15 +8117,7 @@ int main()
 					}
 					else
 					{
-
-						{
-							CLog			log;
-							ostringstream	ostTmp;
-
-							ostTmp.str("");
-							ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": inserting into DB (" << ost.str() << ")";
-							log.Write(ERROR, ostTmp.str());
-						}
+						MESSAGE_ERROR("", "", gettext("SQL syntax error"));
 
 						ostFinal.str("");
 						ostFinal << "{" << std::endl;
@@ -9685,43 +8129,16 @@ int main()
 				}
 				else
 				{
-					string	companyName;
+					MESSAGE_DEBUG("", "", "new job title [" + newCompanyName + "] needed to be added to DB");
 
+					auto	company_id = db.Query("INSERT INTO `company` (`name`) VALUES (\"" + newCompanyName + "\");");
+
+					if(company_id)
 					{
-						CLog	log;
-						ostringstream	ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": new job title [" << newCompanyName << "] needed to be added to DB";
-						log.Write(DEBUG, ost.str());
-					}
-					ost.str("");
-					ost << "INSERT INTO `company` (`name`) VALUES (\"" << newCompanyName << "\");";
-					db.Query(ost.str());
-
-					ost.str("");
-					ost << "SELECT `id` FROM `company` WHERE `name`=\"" << newCompanyName << "\";";
-					if(db.Query(ost.str()) == 0)
-					{
-						CLog	log;
-						ostringstream	ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": id of newly inserted job [" << newCompanyName << "] is not defined";
-						log.Write(ERROR, ost.str());
-					}
-					else
-					{
-						companyName = db.Get(0, "id");
-
-						ost.str("");
-						ost << "update users_company set `company_id`=\"" << companyName << "\" WHERE `user_id`='" << user.GetID() << "' and `id`='" << companyId << "'";
-						db.Query(ost.str());
+						db.Query("update users_company set `company_id`=\"" + to_string(company_id) + "\" WHERE `user_id`='" + user.GetID() + "' and `id`='" + user_company_id + "'");
 
 						// --- Update live feed
-						ost.str("");
-						ost << "INSERT INTO `feed` (`title`, `userId`, `actionTypeId`, `actionId`, `eventTimestamp`) values(\"\",\"" << user.GetID() << "\", \"52\", \"" << companyId << "\", NOW())";
-						if(db.InsertQuery(ost.str()))
+						if(db.InsertQuery("INSERT INTO `feed` (`title`, `userId`, `actionTypeId`, `actionId`, `eventTimestamp`) values(\"\",\"" + user.GetID() + "\", \"52\", \"" + user_company_id + "\", NOW())"))
 						{
 							ostFinal.str("");
 							ostFinal << "{" << std::endl;
@@ -9732,14 +8149,7 @@ int main()
 						else
 						{
 
-							{
-								CLog			log;
-								ostringstream	ostTmp;
-
-								ostTmp.str("");
-								ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": inserting into DB (" << ost.str() << ")";
-								log.Write(ERROR, ostTmp.str());
-							}
+							MESSAGE_ERROR("", "", gettext("SQL syntax error"));
 
 							ostFinal.str("");
 							ostFinal << "{" << std::endl;
@@ -9748,19 +8158,16 @@ int main()
 							ostFinal << "}" << std::endl;
 						}
 					}
+					else
+					{
+						MESSAGE_ERROR("", "", "id of newly inserted job [" + newCompanyName + "] is not defined");
+					}
 				}
 
 			}
 			else
 			{
-				{
-					CLog	log;
-					ostringstream	ost;
-
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": newCompanyName [" << newCompanyName << "] or companyId [" << companyId << "] is unknown/empty";
-					log.Write(DEBUG, ost.str());
-				}
+				MESSAGE_DEBUG("", "", "newCompanyName [" + newCompanyName + "] or user_company_id [" + user_company_id + "] is unknown/empty");
 			}
 
 			indexPage.RegisterVariableForce("result", ostFinal.str());
@@ -9801,16 +8208,9 @@ int main()
 				ost << "SELECT * FROM `certification_tracks` WHERE `title`=\"" << newCertificationTrack << "\";";
 				if((affected = db.Query(ost.str())) > 0)
 				{
-					string	trackID = db.Get(0, "id");
+					auto	trackID = db.Get(0, "id");
 
-					{
-						CLog	log;
-						ostringstream	ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": company [" << newCertificationTrack << "] already exists, no need to update DB.";
-						log.Write(DEBUG, ost.str());
-					}
+					MESSAGE_DEBUG("", "", "company [" + newCertificationTrack + "] already exists, no need to update DB.");
 
 					ost.str("");
 					ost << "update `users_certifications` set `track_id`=\"" << trackID << "\" WHERE `user_id`='" << user.GetID() << "' and `id`='" << userCertificationID << "'";
@@ -9830,14 +8230,7 @@ int main()
 					else
 					{
 
-						{
-							CLog			log;
-							ostringstream	ostTmp;
-
-							ostTmp.str("");
-							ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": inserting into DB (" << ost.str() << ")";
-							log.Write(ERROR, ostTmp.str());
-						}
+						MESSAGE_ERROR("", "", gettext("SQL syntax error"));
 
 						ostFinal.str("");
 						ostFinal << "{" << std::endl;
@@ -9849,16 +8242,10 @@ int main()
 				}
 				else
 				{
-					unsigned long	trackID;
+					auto	trackID = 0;
 
-					{
-						CLog	log;
-						ostringstream	ost;
+					MESSAGE_DEBUG("", "", "new certification title [" + newCertificationTrack + "] needed to be added to DB");
 
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": new certification title [" << newCertificationTrack << "] needed to be added to DB";
-						log.Write(DEBUG, ost.str());
-					}
 					ost.str("");
 					ost << "INSERT INTO `certification_tracks` (`title`) VALUES (\"" << newCertificationTrack << "\");";
 					trackID = db.InsertQuery(ost.str());
@@ -9878,34 +8265,19 @@ int main()
 						}
 						else
 						{
-							{
-								CLog			log;
-								MESSAGE_ERROR("", action, "inserting into `feed` (" + ost.str() + ")");
-							}
+							MESSAGE_ERROR("", action, "inserting into `feed` (" + ost.str() + ")");
 						}
 					}
 					else
 					{
-						CLog	log;
-						ostringstream	ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": id of newly inserted job [" << newCertificationTrack << "] is not defined";
-						log.Write(ERROR, ost.str());
+						MESSAGE_ERROR("", "", "id of newly inserted job [" + newCertificationTrack + "] is not defined");
 					}
 				}
 
 			}
 			else
 			{
-				{
-					CLog	log;
-					ostringstream	ost;
-
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": newCertificationTrack [" << newCertificationTrack << "] or userCertificationID [" << userCertificationID << "] is unknown/empty";
-					log.Write(DEBUG, ost.str());
-				}
+				MESSAGE_DEBUG("", "", "newCertificationTrack [" + newCertificationTrack + "] or userCertificationID [" + userCertificationID + "] is unknown/empty");
 			}
 
 			indexPage.RegisterVariableForce("result", ostFinal.str());
@@ -9948,14 +8320,7 @@ int main()
 				{
 					string	trackID = db.Get(0, "id");
 
-					{
-						CLog	log;
-						ostringstream	ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": company [" << newCourseTrack << "] already exists, no need to update DB.";
-						log.Write(DEBUG, ost.str());
-					}
+					MESSAGE_DEBUG("", "", "company [" + newCourseTrack + "] already exists, no need to update DB.");
 
 					ost.str("");
 					ost << "update `users_courses` set `track_id`=\"" << trackID << "\" WHERE `user_id`='" << user.GetID() << "' and `id`='" << userCourseID << "'";
@@ -9974,11 +8339,7 @@ int main()
 					}
 					else
 					{
-
-						{
-							CLog			log;
-							MESSAGE_ERROR("", action, "inserting into `feed` (" + ost.str() + ")");
-						}
+						MESSAGE_ERROR("", action, "inserting into `feed` (" + ost.str() + ")");
 
 						ostFinal.str("");
 						ostFinal << "{" << std::endl;
@@ -9990,19 +8351,9 @@ int main()
 				}
 				else
 				{
-					unsigned long	trackID;
+					MESSAGE_DEBUG("", "", "new certification title [" + newCourseTrack + "] needed to be added to DB");
 
-					{
-						CLog	log;
-						ostringstream	ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": new certification title [" << newCourseTrack << "] needed to be added to DB";
-						log.Write(DEBUG, ost.str());
-					}
-					ost.str("");
-					ost << "INSERT INTO `certification_tracks` (`title`) VALUES (\"" << newCourseTrack << "\");";
-					trackID = db.InsertQuery(ost.str());
+					auto	trackID = db.InsertQuery("INSERT INTO `certification_tracks` (`title`) VALUES (\"" + newCourseTrack + "\");");
 
 					if(trackID)
 					{
@@ -10019,35 +8370,20 @@ int main()
 						}
 						else
 						{
-							{
-								CLog			log;
-								MESSAGE_ERROR("", action, "inserting into `feed` (" + ost.str() + ")");
-							}
+							MESSAGE_ERROR("", action, "inserting into `feed` (" + ost.str() + ")");
 						}
 
 					}
 					else
 					{
-						CLog	log;
-						ostringstream	ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": id of newly inserted job [" << newCourseTrack << "] is not defined";
-						log.Write(ERROR, ost.str());
+						MESSAGE_ERROR("", "", "id of newly inserted job [" + newCourseTrack + "] is not defined");
 					}
 				}
 
 			}
 			else
 			{
-				{
-					CLog	log;
-					ostringstream	ost;
-
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": newCourseTrack [" << newCourseTrack << "] or userCourseID [" << userCourseID << "] is unknown/empty";
-					log.Write(DEBUG, ost.str());
-				}
+				MESSAGE_DEBUG("", "", "newCourseTrack [" + newCourseTrack + "] or userCourseID [" + userCourseID + "] is unknown/empty");
 			}
 
 			indexPage.RegisterVariableForce("result", ostFinal.str());
@@ -10093,47 +8429,24 @@ int main()
 					ost << "SELECT * FROM `school` WHERE `id`=\"" << existingSchoolID << "\";";
 					if(db.Query(ost.str()))
 					{
-						unsigned long	existingLocalityID = stol(db.Get(0, "geo_locality_id"));
-						unsigned long	newSchoolID;
+						auto	existingLocalityID = stol(db.Get(0, "geo_locality_id"));
+						auto	newSchoolID = 0l;
 
 						ost.str("");
 						ost << "SELECT * FROM `school` WHERE `geo_locality_id`=\"" << existingLocalityID << "\" and `title`=\"" << newSchoolNumber << "\";";
 						if(db.Query(ost.str()))
 						{
-							{
-								CLog	log;
-								ostringstream	ost;
-
-								ost.str("");
-								ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": school [locality " << existingLocalityID << ", newSchoolNumber " << newSchoolNumber << "] already exists, no need to update DB.";
-								log.Write(DEBUG, ost.str());
-							}
+							MESSAGE_DEBUG("", "", "school [locality " + to_string(existingLocalityID) + ", newSchoolNumber " + newSchoolNumber + "] already exists, no need to update DB.");
 
 							newSchoolID = stol(db.Get(0, "id"));
 						}
 						else
 						{
+							MESSAGE_DEBUG("", "", "require to add new school [locality " + to_string(existingLocalityID) + ", newSchoolNumber " + newSchoolNumber + "]");
+
+							if(!(newSchoolID = db.InsertQuery("INSERT INTO `school` (`geo_locality_id`, `title`) VALUES (\"" + to_string(existingLocalityID) + "\",\"" + newSchoolNumber + "\");")))
 							{
-								CLog	log;
-								ostringstream	ost;
-
-								ost.str("");
-								ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": require to add new school [locality " << existingLocalityID << ", newSchoolNumber " << newSchoolNumber << "]";
-								log.Write(DEBUG, ost.str());
-							}
-
-							ost.str("");
-							ost << "INSERT INTO `school` (`geo_locality_id`, `title`) VALUES (\"" << existingLocalityID << "\",\"" << newSchoolNumber << "\");";
-							if(!(newSchoolID = db.InsertQuery(ost.str())))
-							{
-								{
-									CLog			log;
-									ostringstream	ostTmp;
-
-									ostTmp.str("");
-									ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": inserting new school (" << newSchoolNumber << ")";
-									log.Write(ERROR, ostTmp.str());
-								}
+								MESSAGE_ERROR("", "", "inserting new school (" + newSchoolNumber + ")");
 
 								ostFinal.str("");
 								ostFinal << "{" << std::endl;
@@ -10163,14 +8476,7 @@ int main()
 							else
 							{
 
-								{
-									CLog			log;
-									ostringstream	ostTmp;
-
-									ostTmp.str("");
-									ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": inserting into DB (" << ost.str() << ")";
-									log.Write(ERROR, ostTmp.str());
-								}
+								MESSAGE_ERROR("", "", gettext("SQL syntax error"));
 
 								ostFinal.str("");
 								ostFinal << "{" << std::endl;
@@ -10182,14 +8488,7 @@ int main()
 						}
 						else
 						{
-							{
-								CLog			log;
-								ostringstream	ostTmp;
-
-								ostTmp.str("");
-								ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": school can't be found";
-								log.Write(ERROR, ostTmp.str());
-							}
+							MESSAGE_ERROR("", "", "school can't be found");
 
 							ostFinal.str("");
 							ostFinal << "{" << std::endl;
@@ -10200,14 +8499,7 @@ int main()
 					}
 					else
 					{
-						{
-							CLog			log;
-							ostringstream	ostTmp;
-
-							ostTmp.str("");
-							ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": finding school (id=" << existingSchoolID << ")";
-							log.Write(ERROR, ostTmp.str());
-						}
+						MESSAGE_ERROR("", "", "finding school (id=" + to_string(existingSchoolID) + ")");
 
 						ostFinal.str("");
 						ostFinal << "{" << std::endl;
@@ -10219,14 +8511,7 @@ int main()
 				else
 				{
 
-					{
-						CLog			log;
-						ostringstream	ostTmp;
-
-						ostTmp.str("");
-						ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": selecting FROM users_school (id=" << userSchoolID << ")";
-						log.Write(ERROR, ostTmp.str());
-					}
+					MESSAGE_ERROR("", "", "selecting FROM users_school (id=" + userSchoolID + ")");
 
 					ostFinal.str("");
 					ostFinal << "{" << std::endl;
@@ -10239,14 +8524,7 @@ int main()
 			}
 			else
 			{
-				{
-					CLog	log;
-					ostringstream	ost;
-
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": either newSchoolNumber [" << newSchoolNumber << "] or userSchoolID [" << userSchoolID << "] is unknown/empty";
-					log.Write(DEBUG, ost.str());
-				}
+				MESSAGE_DEBUG("", "", "either newSchoolNumber [" + newSchoolNumber + "] or userSchoolID [" + userSchoolID + "] is unknown/empty");
 			}
 
 			indexPage.RegisterVariableForce("result", ostFinal.str());
@@ -10292,47 +8570,22 @@ int main()
 					ost << "SELECT * FROM `university` WHERE `id`=\"" << existingUniversityID << "\";";
 					if(db.Query(ost.str()))
 					{
-						unsigned long	existingRegionID = stol(db.Get(0, "geo_region_id"));
-						unsigned long	newUniversityID;
+						auto	existingRegionID = stol(db.Get(0, "geo_region_id"));
+						auto	newUniversityID = 0l;
 
-						ost.str("");
-						ost << "SELECT * FROM `university` WHERE `geo_region_id`=\"" << existingRegionID << "\" and `title`=\"" << newUniversityTitle << "\";";
-						if(db.Query(ost.str()))
+						if(db.Query("SELECT * FROM `university` WHERE `geo_region_id`=\"" + to_string(existingRegionID) + "\" and `title`=\"" + newUniversityTitle + "\";"))
 						{
-							{
-								CLog	log;
-								ostringstream	ost;
-
-								ost.str("");
-								ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": university [locality " << existingRegionID << ", newUniversityTitle " << newUniversityTitle << "] already exists, no need to update DB.";
-								log.Write(DEBUG, ost.str());
-							}
+							MESSAGE_DEBUG("", "", "university [locality " + to_string(existingRegionID) + ", newUniversityTitle " + newUniversityTitle + "] already exists, no need to update DB.");
 
 							newUniversityID = stol(db.Get(0, "id"));
 						}
 						else
 						{
+							MESSAGE_DEBUG("", "", "require to add new university [locality " + to_string(existingRegionID) + ", newUniversityTitle " + newUniversityTitle + "]");
+
+							if(!(newUniversityID = db.InsertQuery("INSERT INTO `university` (`geo_region_id`, `title`) VALUES (\"" + to_string(existingRegionID) + "\",\"" + newUniversityTitle + "\");")))
 							{
-								CLog	log;
-								ostringstream	ost;
-
-								ost.str("");
-								ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": require to add new university [locality " << existingRegionID << ", newUniversityTitle " << newUniversityTitle << "]";
-								log.Write(DEBUG, ost.str());
-							}
-
-							ost.str("");
-							ost << "INSERT INTO `university` (`geo_region_id`, `title`) VALUES (\"" << existingRegionID << "\",\"" << newUniversityTitle << "\");";
-							if(!(newUniversityID = db.InsertQuery(ost.str())))
-							{
-								{
-									CLog			log;
-									ostringstream	ostTmp;
-
-									ostTmp.str("");
-									ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": inserting new university (" << newUniversityTitle << ")";
-									log.Write(ERROR, ostTmp.str());
-								}
+								MESSAGE_ERROR("", "", "inserting new university (" + newUniversityTitle + ")");
 
 								ostFinal.str("");
 								ostFinal << "{" << std::endl;
@@ -10362,14 +8615,7 @@ int main()
 							else
 							{
 
-								{
-									CLog			log;
-									ostringstream	ostTmp;
-
-									ostTmp.str("");
-									ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": inserting into DB (" << ost.str() << ")";
-									log.Write(ERROR, ostTmp.str());
-								}
+								MESSAGE_ERROR("", "", gettext("SQL syntax error"));
 
 								ostFinal.str("");
 								ostFinal << "{" << std::endl;
@@ -10381,14 +8627,7 @@ int main()
 						}
 						else
 						{
-							{
-								CLog			log;
-								ostringstream	ostTmp;
-
-								ostTmp.str("");
-								ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": university can't be found";
-								log.Write(ERROR, ostTmp.str());
-							}
+							MESSAGE_ERROR("", "", "university can't be found");
 
 							ostFinal.str("");
 							ostFinal << "{" << std::endl;
@@ -10399,14 +8638,7 @@ int main()
 					}
 					else
 					{
-						{
-							CLog			log;
-							ostringstream	ostTmp;
-
-							ostTmp.str("");
-							ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": finding university (id=" << existingUniversityID << ")";
-							log.Write(ERROR, ostTmp.str());
-						}
+						MESSAGE_ERROR("", "", "finding university (id=" + to_string(existingUniversityID) + ")");
 
 						ostFinal.str("");
 						ostFinal << "{" << std::endl;
@@ -10418,14 +8650,7 @@ int main()
 				else
 				{
 
-					{
-						CLog			log;
-						ostringstream	ostTmp;
-
-						ostTmp.str("");
-						ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": selecting FROM users_university (id=" << userUniversityID << ")";
-						log.Write(ERROR, ostTmp.str());
-					}
+					MESSAGE_ERROR("", "", "selecting FROM users_university (id=" + userUniversityID + ")");
 
 					ostFinal.str("");
 					ostFinal << "{" << std::endl;
@@ -10438,14 +8663,7 @@ int main()
 			}
 			else
 			{
-				{
-					CLog	log;
-					ostringstream	ost;
-
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": either newUniversityTitle [" << newUniversityTitle << "] or userUniversityID [" << userUniversityID << "] is unknown/empty";
-					log.Write(DEBUG, ost.str());
-				}
+				MESSAGE_DEBUG("", "", "either newUniversityTitle [" + newUniversityTitle + "] or userUniversityID [" + userUniversityID + "] is unknown/empty");
 			}
 
 			indexPage.RegisterVariableForce("result", ostFinal.str());
@@ -10486,16 +8704,9 @@ int main()
 				ost << "SELECT * FROM `language` WHERE `title`=\"" << newLanguageTitle << "\";";
 				if((affected = db.Query(ost.str())) > 0)
 				{
-					string	languageID = db.Get(0, "id");
+					auto	languageID = db.Get(0, "id");
 
-					{
-						CLog	log;
-						ostringstream	ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": company [" << newLanguageTitle << "] already exists, no need to update DB.";
-						log.Write(DEBUG, ost.str());
-					}
+					MESSAGE_DEBUG("", "", "company [" + newLanguageTitle + "] already exists, no need to update DB.");
 
 					ost.str("");
 					ost << "update `users_language` set `language_id`=\"" << languageID << "\" WHERE `user_id`='" << user.GetID() << "' and `id`='" << userLanguageID << "'";
@@ -10514,15 +8725,7 @@ int main()
 					}
 					else
 					{
-
-						{
-							CLog			log;
-							ostringstream	ostTmp;
-
-							ostTmp.str("");
-							ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": inserting into DB (" << ost.str() << ")";
-							log.Write(ERROR, ostTmp.str());
-						}
+						MESSAGE_ERROR("", "", gettext("SQL syntax error"));
 
 						ostFinal.str("");
 						ostFinal << "{" << std::endl;
@@ -10534,19 +8737,9 @@ int main()
 				}
 				else
 				{
-					unsigned long	languageID;
+					MESSAGE_DEBUG("", "", "new language title [" + newLanguageTitle + "] needed to be added to DB");
 
-					{
-						CLog	log;
-						ostringstream	ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": new language title [" << newLanguageTitle << "] needed to be added to DB";
-						log.Write(DEBUG, ost.str());
-					}
-					ost.str("");
-					ost << "INSERT INTO `language` (`title`) VALUES (\"" << newLanguageTitle << "\");";
-					languageID = db.InsertQuery(ost.str());
+					auto	languageID = db.InsertQuery("INSERT INTO `language` (`title`) VALUES (\"" + newLanguageTitle + "\");");
 
 					if(languageID)
 					{
@@ -10567,15 +8760,7 @@ int main()
 						}
 						else
 						{
-
-							{
-								CLog			log;
-								ostringstream	ostTmp;
-
-								ostTmp.str("");
-								ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": inserting into DB (" << ost.str() << ")";
-								log.Write(ERROR, ostTmp.str());
-							}
+							MESSAGE_ERROR("", "", gettext("SQL syntax error"));
 
 							ostFinal.str("");
 							ostFinal << "{" << std::endl;
@@ -10586,12 +8771,7 @@ int main()
 					}
 					else
 					{
-						CLog	log;
-						ostringstream	ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": id of newly inserted language [" << newLanguageTitle << "] is not defined";
-						log.Write(ERROR, ost.str());
+						MESSAGE_ERROR("", "", "id of newly inserted language [" + newLanguageTitle + "] is not defined");
 
 						ostFinal.str("");
 						ostFinal << "{" << std::endl;
@@ -10604,14 +8784,7 @@ int main()
 			}
 			else
 			{
-				{
-					CLog	log;
-					ostringstream	ost;
-
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": either newLanguageTitle [" << newLanguageTitle << "] or userLanguageID [" << userLanguageID << "] is unknown/empty";
-					log.Write(DEBUG, ost.str());
-				}
+				MESSAGE_DEBUG("", "", "either newLanguageTitle [" + newLanguageTitle + "] or userLanguageID [" + userLanguageID + "] is unknown/empty");
 
 				ostFinal.str("");
 				ostFinal << "{" << std::endl;
@@ -10658,16 +8831,9 @@ int main()
 				ost << "SELECT * FROM `skill` WHERE `title`=\"" << newSkillTitle << "\";";
 				if((affected = db.Query(ost.str())) > 0)
 				{
-					string	skillID = db.Get(0, "id");
+					auto	skillID = db.Get(0, "id");
 
-					{
-						CLog	log;
-						ostringstream	ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": company [" << newSkillTitle << "] already exists, no need to update DB.";
-						log.Write(DEBUG, ost.str());
-					}
+					MESSAGE_DEBUG("", "", "company [" + newSkillTitle + "] already exists, no need to update DB.");
 
 					ost.str("");
 					ost << "update `users_skill` set `skill_id`=\"" << skillID << "\" WHERE `user_id`='" << user.GetID() << "' and `id`='" << userSkillID << "'";
@@ -10686,15 +8852,7 @@ int main()
 					}
 					else
 					{
-
-						{
-							CLog			log;
-							ostringstream	ostTmp;
-
-							ostTmp.str("");
-							ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": inserting into DB (" << ost.str() << ")";
-							log.Write(ERROR, ostTmp.str());
-						}
+						MESSAGE_ERROR("", "", gettext("SQL syntax error"));
 
 						ostFinal.str("");
 						ostFinal << "{" << std::endl;
@@ -10706,19 +8864,9 @@ int main()
 				}
 				else
 				{
-					unsigned long	skillID;
+					MESSAGE_DEBUG("", "", "new skill title [" + newSkillTitle + "] needed to be added to DB");
 
-					{
-						CLog	log;
-						ostringstream	ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": new skill title [" << newSkillTitle << "] needed to be added to DB";
-						log.Write(DEBUG, ost.str());
-					}
-					ost.str("");
-					ost << "INSERT INTO `skill` (`title`) VALUES (\"" << newSkillTitle << "\");";
-					skillID = db.InsertQuery(ost.str());
+					auto skillID = db.InsertQuery("INSERT INTO `skill` (`title`) VALUES (\"" + newSkillTitle + "\");");
 
 					if(skillID)
 					{
@@ -10735,10 +8883,7 @@ int main()
 						}
 						else
 						{
-							{
-								CLog			log;
-								MESSAGE_ERROR("", action, "inserting into `feed` (" + ost.str() + ")");
-							}
+							MESSAGE_ERROR("", action, "inserting into `feed` (" + ost.str() + ")");
 						}
 
 						ostFinal.str("");
@@ -10749,12 +8894,7 @@ int main()
 					}
 					else
 					{
-						CLog	log;
-						ostringstream	ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": id of newly inserted skill [" << newSkillTitle << "] is not defined";
-						log.Write(ERROR, ost.str());
+						MESSAGE_ERROR("", "", "id of newly inserted skill [" + newSkillTitle + "] is not defined");
 
 						ostFinal.str("");
 						ostFinal << "{" << std::endl;
@@ -10767,14 +8907,7 @@ int main()
 			}
 			else
 			{
-				{
-					CLog	log;
-					ostringstream	ost;
-
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": either newSkillTitle [" << newSkillTitle << "] or userSkillID [" << userSkillID << "] is unknown/empty";
-					log.Write(DEBUG, ost.str());
-				}
+				MESSAGE_DEBUG("", "", "either newSkillTitle [" + newSkillTitle + "] or userSkillID [" + userSkillID + "] is unknown/empty");
 
 				ostFinal.str("");
 				ostFinal << "{" << std::endl;
@@ -10834,15 +8967,7 @@ int main()
 				}
 				else
 				{
-
-					{
-						CLog			log;
-						ostringstream	ostTmp;
-
-						ostTmp.str("");
-						ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": inserting into DB (" << ost.str() << ")";
-						log.Write(ERROR, ostTmp.str());
-					}
+					MESSAGE_ERROR("", "", gettext("SQL syntax error"));
 
 					ostFinal.str("");
 					ostFinal << "{" << std::endl;
@@ -10854,14 +8979,7 @@ int main()
 			}
 			else
 			{
-				{
-					CLog	log;
-					ostringstream	ost;
-
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": newCertificationNumber [" << newCertificationNumber << "] or userCertificationID [" << userCertificationID << "] is unknown/empty";
-					log.Write(DEBUG, ost.str());
-				}
+				MESSAGE_DEBUG("", "", "newCertificationNumber [" + newCertificationNumber + "] or userCertificationID [" + userCertificationID + "] is unknown/empty");
 			}
 
 			indexPage.RegisterVariableForce("result", ostFinal.str());
@@ -10917,27 +9035,12 @@ int main()
 						{
 							localityID = stol(db.Get(0, "id"));
 
-							{
-								CLog	log;
-								ostringstream	ost;
-
-								ost.str("");
-								ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": locality [" << newSchoolLocality << "] already exists, no need to update DB.";
-								log.Write(DEBUG, ost.str());
-							}
-
+							MESSAGE_DEBUG("", "", "locality [" + newSchoolLocality + "] already exists, no need to update DB.");
 						}
 						else
 						{
+							MESSAGE_DEBUG("", "", "new locality title [" + newSchoolLocality + "] needed to be added to DB");
 
-							{
-								CLog	log;
-								ostringstream	ost;
-
-								ost.str("");
-								ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": new locality title [" << newSchoolLocality << "] needed to be added to DB";
-								log.Write(DEBUG, ost.str());
-							}
 							ost.str("");
 							ost << "INSERT INTO `geo_locality` (`title`) VALUES (\"" << newSchoolLocality << "\");";
 							localityID = db.InsertQuery(ost.str());
@@ -10975,87 +9078,62 @@ int main()
 								}
 								else
 								{
-									{
-										CLog			log;
-										MESSAGE_ERROR("", action, "inserting into `feed` (" + ost.str() + ")");
-									}
+									MESSAGE_ERROR("", "", gettext("SQL syntax error"));
 								}
 
 								ostFinal.str("");
-								ostFinal << "{" << std::endl;
-								ostFinal << "\"result\" : \"success\"," << std::endl;
-								ostFinal << "\"description\" : \"\"" << std::endl;
-								ostFinal << "}" << std::endl;
+								ostFinal << "{";
+								ostFinal << "\"result\" : \"success\",";
+								ostFinal << "\"description\" : \"\"";
+								ostFinal << "}";
 							}
 							else
 							{
-								CLog	log;
-								ostringstream	ost;
-
-								ost.str("");
-								ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": id of newly inserted school [" << localityID << ", " << existingSchoolTitle << "] is not defined";
-								log.Write(ERROR, ost.str());
+								MESSAGE_ERROR("", "", "id of newly inserted school [" + to_string(localityID) + ", " + existingSchoolTitle + "] is not defined");
 
 								ostFinal.str("");
-								ostFinal << "{" << std::endl;
-								ostFinal << "\"result\" : \"error\"," << std::endl;
-								ostFinal << "\"description\" : \"ERROR id of newly inserted school [" << localityID << ", " << existingSchoolTitle << "] is not defined\"" << std::endl;
-								ostFinal << "}" << std::endl;
+								ostFinal << "{";
+								ostFinal << "\"result\" : \"error\",";
+								ostFinal << "\"description\" : \"ERROR id of newly inserted school [" << localityID << ", " << existingSchoolTitle << "] is not defined\"";
+								ostFinal << "}";
 
 							}
 
 						}
 						else
 						{
-							CLog	log;
-							ostringstream	ost;
-
-							ost.str("");
-							ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": localityID [" << localityID << "] or existingSchoolTitle [" << existingSchoolTitle << "] is not defined";
-							log.Write(ERROR, ost.str());
+							MESSAGE_ERROR("", "", "localityID [" + to_string(localityID) + "] or existingSchoolTitle [" + existingSchoolTitle + "] is not defined");
 
 							ostFinal.str("");
-							ostFinal << "{" << std::endl;
-							ostFinal << "\"result\" : \"error\"," << std::endl;
-							ostFinal << "\"description\" : \" localityID [" << localityID << "] or existingSchoolTitle [" << existingSchoolTitle << "] is not defined\"" << std::endl;
-							ostFinal << "}" << std::endl;
+							ostFinal << "{";
+							ostFinal << "\"result\" : \"error\",";
+							ostFinal << "\"description\" : \" localityID [" << localityID << "] or existingSchoolTitle [" << existingSchoolTitle << "] is not defined\"";
+							ostFinal << "}";
 
 						}
 					}
 					else
 					{
-						CLog	log;
-						ostringstream	ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": id of existing schoolID [" << existingSchoolID << "] is not defined";
-						log.Write(ERROR, ost.str());
+						MESSAGE_ERROR("", "", "id of existing schoolID [" + existingSchoolID + "] is not defined");
 
 						ostFinal.str("");
-						ostFinal << "{" << std::endl;
-						ostFinal << "\"result\" : \"error\"," << std::endl;
-						ostFinal << "\"description\" : \"ERROR id of existing schoolID [" << existingSchoolID << "] is not defined\"" << std::endl;
-						ostFinal << "}" << std::endl;
+						ostFinal << "{";
+						ostFinal << "\"result\" : \"error\",";
+						ostFinal << "\"description\" : \"ERROR id of existing schoolID [" << existingSchoolID << "] is not defined\"";
+						ostFinal << "}";
 
 					}
 
 				}
 				else
 				{
-					{
-						CLog	log;
-						ostringstream	ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": ERROR: userSchoolID [" << userSchoolID << "] is unknown/empty in DB or belongs to another user";
-						log.Write(ERROR, ost.str());
-					}
+					MESSAGE_ERROR("", "", "ERROR: userSchoolID [" + userSchoolID + "] is unknown/empty in DB or belongs to another user");
 
 					ostFinal.str("");
-					ostFinal << "{" << std::endl;
-					ostFinal << "\"result\" : \"error\"," << std::endl;
-					ostFinal << "\"description\" : \"userSchoolID unknown/empty in DB or belongs to another user\"" << std::endl;
-					ostFinal << "}" << std::endl;
+					ostFinal << "{";
+					ostFinal << "\"result\" : \"error\",";
+					ostFinal << "\"description\" : \"userSchoolID unknown/empty in DB or belongs to another user\"";
+					ostFinal << "}";
 				}
 
 
@@ -11063,19 +9141,13 @@ int main()
 			}
 			else
 			{
-				{
-					CLog	log;
-					ostringstream	ost;
+				MESSAGE_ERROR("", "", "newSchoolLocality [" + newSchoolLocality + "] or userSchoolID [" + userSchoolID + "] is unknown/empty");
 
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": newSchoolLocality [" << newSchoolLocality << "] or userSchoolID [" << userSchoolID << "] is unknown/empty";
-					log.Write(ERROR, ost.str());
-				}
 				ostFinal.str("");
-				ostFinal << "{" << std::endl;
-				ostFinal << "\"result\" : \"error\"," << std::endl;
-				ostFinal << "\"description\" : \"newSchoolLocality [" << newSchoolLocality << "] or userSchoolID [" << userSchoolID << "] is unknown/empty\"" << std::endl;
-				ostFinal << "}" << std::endl;
+				ostFinal << "{";
+				ostFinal << "\"result\" : \"error\",";
+				ostFinal << "\"description\" : \"newSchoolLocality [" << newSchoolLocality << "] or userSchoolID [" << userSchoolID << "] is unknown/empty\"";
+				ostFinal << "}";
 			}
 
 			indexPage.RegisterVariableForce("result", ostFinal.str());
@@ -11131,27 +9203,12 @@ int main()
 						{
 							regionID = stol(db.Get(0, "id"));
 
-							{
-								CLog	log;
-								ostringstream	ost;
-
-								ost.str("");
-								ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": region [" << newUniversityRegion << "] already exists, no need to update DB.";
-								log.Write(DEBUG, ost.str());
-							}
-
+							MESSAGE_DEBUG("", "", "region [" + newUniversityRegion + "] already exists, no need to update DB.");
 						}
 						else
 						{
+							MESSAGE_DEBUG("", "", "new region title [" + newUniversityRegion + "] needed to be added to DB");
 
-							{
-								CLog	log;
-								ostringstream	ost;
-
-								ost.str("");
-								ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": new region title [" << newUniversityRegion << "] needed to be added to DB";
-								log.Write(DEBUG, ost.str());
-							}
 							ost.str("");
 							ost << "INSERT INTO `geo_region` (`title`) VALUES (\"" << newUniversityRegion << "\");";
 							regionID = db.InsertQuery(ost.str());
@@ -11185,14 +9242,10 @@ int main()
 								ost << "INSERT INTO `feed` (`title`, `userId`, `actionTypeId`, `actionId`, `eventTimestamp`) values(\"\",\"" << user.GetID() << "\", \"31\", \"" << userUniversityID << "\", NOW())";
 								if(db.InsertQuery(ost.str()))
 								{
-
 								}
 								else
 								{
-									{
-										CLog			log;
-										MESSAGE_ERROR("", action, "inserting into `feed` (" + ost.str() + ")");
-									}
+									MESSAGE_ERROR("", action, "inserting into `feed` (" + ost.str() + ")");
 								}
 
 								ostFinal.str("");
@@ -11203,12 +9256,7 @@ int main()
 							}
 							else
 							{
-								CLog	log;
-								ostringstream	ost;
-
-								ost.str("");
-								ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": id of newly inserted university [" << regionID << ", " << existingUniversityTitle << "] is not defined";
-								log.Write(ERROR, ost.str());
+								MESSAGE_ERROR("", "", "id of newly inserted university [" + to_string(regionID) + ", " + existingUniversityTitle + "] is not defined");
 
 								ostFinal.str("");
 								ostFinal << "{" << std::endl;
@@ -11221,12 +9269,7 @@ int main()
 						}
 						else
 						{
-							CLog	log;
-							ostringstream	ost;
-
-							ost.str("");
-							ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": regionID [" << regionID << "] or existingUniversityTitle [" << existingUniversityTitle << "] is not defined";
-							log.Write(ERROR, ost.str());
+							MESSAGE_ERROR("", "", "regionID [" + to_string(regionID) + "] or existingUniversityTitle [" + existingUniversityTitle + "] is not defined");
 
 							ostFinal.str("");
 							ostFinal << "{" << std::endl;
@@ -11238,12 +9281,7 @@ int main()
 					}
 					else
 					{
-						CLog	log;
-						ostringstream	ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": id of existing universityID [" << existingUniversityID << "] is not defined";
-						log.Write(ERROR, ost.str());
+						MESSAGE_ERROR("", "", "id of existing universityID [" + existingUniversityID + "] is not defined");
 
 						ostFinal.str("");
 						ostFinal << "{" << std::endl;
@@ -11256,14 +9294,7 @@ int main()
 				}
 				else
 				{
-					{
-						CLog	log;
-						ostringstream	ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": ERROR: userUniversityID [" << userUniversityID << "] is unknown/empty in DB or belongs to another user";
-						log.Write(ERROR, ost.str());
-					}
+					MESSAGE_ERROR("", "", "ERROR: userUniversityID [" + userUniversityID + "] is unknown/empty in DB or belongs to another user");
 
 					ostFinal.str("");
 					ostFinal << "{" << std::endl;
@@ -11277,14 +9308,8 @@ int main()
 			}
 			else
 			{
-				{
-					CLog	log;
-					ostringstream	ost;
+				MESSAGE_ERROR("", "", "newUniversityRegion [" + newUniversityRegion + "] or userUniversityID [" + userUniversityID + "] is unknown/empty");
 
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": newUniversityRegion [" << newUniversityRegion << "] or userUniversityID [" << userUniversityID << "] is unknown/empty";
-					log.Write(ERROR, ost.str());
-				}
 				ostFinal.str("");
 				ostFinal << "{" << std::endl;
 				ostFinal << "\"result\" : \"error\"," << std::endl;
@@ -11337,12 +9362,7 @@ int main()
 					}
 					else
 					{
-						CLog	log;
-						ostringstream	ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": updating recommendation [" << userRecommendationID << "] state";
-						log.Write(ERROR, ost.str());
+						MESSAGE_ERROR("", "", "updating recommendation [" + userRecommendationID + "] state");
 
 						ostFinal.str("");
 						ostFinal << "{";
@@ -11353,14 +9373,7 @@ int main()
 				}
 				else
 				{
-					{
-						CLog	log;
-						ostringstream	ost;
-
-						ost.str("");
-						ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": userRecommendationID [" << userRecommendationID << "] is unknown/empty in DB or belongs to another user";
-						log.Write(ERROR, ost.str());
-					}
+					MESSAGE_ERROR("", "", "userRecommendationID [" + userRecommendationID + "] is unknown/empty in DB or belongs to another user");
 
 					ostFinal.str("");
 					ostFinal << "{" << std::endl;
@@ -11374,14 +9387,8 @@ int main()
 			}
 			else
 			{
-				{
-					CLog	log;
-					ostringstream	ost;
+				MESSAGE_ERROR("", "", "userRecommendationID [" + userRecommendationID + "] is unknown/empty");
 
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": userRecommendationID [" << userRecommendationID << "] is unknown/empty";
-					log.Write(ERROR, ost.str());
-				}
 				ostFinal.str("");
 				ostFinal << "{" << std::endl;
 				ostFinal << "\"result\" : \"error\"," << std::endl;
@@ -11424,9 +9431,6 @@ int main()
 				}
 				else
 				{
-					CLog	log;
-					ostringstream	ost;
-
 					MESSAGE_ERROR("", action, "updating recommendation [" + user.GetID() + "] state");
 
 					ostFinal.str("");
@@ -11603,10 +9607,10 @@ int main()
 		// --- viewProfile_SkillApprove
 		if(action == "viewProfile_SkillApprove")
 		{
-			ostringstream	ostFinal;
-			string			userSkillID;
-
 			MESSAGE_DEBUG("", action, "start");
+
+			ostringstream	ostFinal;
+			auto			userSkillID = CheckHTTPParam_Number(indexPage.GetVarsHandler()->Get("id"));
 
 			if(user.GetLogin() == "Guest")
 			{
@@ -11615,122 +9619,82 @@ int main()
 				indexPage.Redirect("/autologin?rand=" + GetRandom(10));
 			}
 
-			userSkillID = CheckHTTPParam_Number(indexPage.GetVarsHandler()->Get("id"));
-
 			if((userSkillID.length() > 0)) 
 			{
 				ostringstream	ost;
-				int				affected;
+				auto			affected = db.Query("SELECT * FROM `skill_confirmed` WHERE `users_skill_id`=\"" + userSkillID + "\" and `approver_userID`=\"" + user.GetID() + "\";");
 
-				ost.str("");
-				ost << "SELECT * FROM `skill_confirmed` WHERE `users_skill_id`=\"" << userSkillID << "\" and `approver_userID`=\"" << user.GetID() << "\";";
-				if( !(affected = db.Query(ost.str())) )
+				if(affected == 0)
 				{
-					unsigned long 		skill_confirmed_id;
+					auto	skill_confirmed_id = db.InsertQuery("INSERT INTO `skill_confirmed` (`users_skill_id`, `approver_userID`) VALUE (\"" + userSkillID + "\", \"" + user.GetID() + "\");");
 
-					ost.str("");
-					ost << "INSERT INTO `skill_confirmed` (`users_skill_id`, `approver_userID`) VALUE (\"" << userSkillID << "\", \"" << user.GetID() << "\");";
-					skill_confirmed_id = db.InsertQuery(ost.str());
 					if(skill_confirmed_id)
 					{
-						ost.str("");
-						ost << "SELECT * FROM `users_skill` WHERE `id`=\"" << userSkillID << "\";";
-						if(db.Query(ost.str()))
+						if(db.Query("SELECT * FROM `users_skill` WHERE `id`=\"" + userSkillID + "\";"))
 						{
-							string		skillOwnerUserID = db.Get(0, "user_id");
+							auto		skillOwnerUserID = db.Get(0, "user_id");
 
 							// --- Update live feed
-							ost.str("");
-							ost << "INSERT INTO `users_notification` (`title`, `userId`, `actionTypeId`, `actionId`, `eventTimestamp`) values(\"\",\"" << skillOwnerUserID << "\", \"43\", \"" << skill_confirmed_id << "\", UNIX_TIMESTAMP())";
-							if(db.InsertQuery(ost.str()))
+							if(db.InsertQuery("INSERT INTO `users_notification` (`title`, `userId`, `actionTypeId`, `actionId`, `eventTimestamp`) values(\"\",\"" + skillOwnerUserID + "\", \"43\", \"" + to_string(skill_confirmed_id) + "\", UNIX_TIMESTAMP())"))
 							{
 								ostFinal.str("");
-								ostFinal << "{" << std::endl;
-								ostFinal << "\"result\" : \"success\"," << std::endl;
-								ostFinal << "\"description\" : \"\"" << std::endl;
-								ostFinal << "}" << std::endl;
+								ostFinal << "{";
+								ostFinal << "\"result\" : \"success\",";
+								ostFinal << "\"description\" : \"\"";
+								ostFinal << "}";
 							}
 							else
 							{
-
-								{
-									CLog			log;
-									ostringstream	ostTmp;
-
-									ostTmp.str("");
-									ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": inserting into DB (" << ost.str() << ")";
-									log.Write(ERROR, ostTmp.str());
-								}
+								MESSAGE_ERROR("", "", gettext("SQL syntax error"));
 
 								ostFinal.str("");
-								ostFinal << "{" << std::endl;
-								ostFinal << "\"result\" : \"error\"," << std::endl;
-								ostFinal << "\"description\" : \"error inserting into user feed\"" << std::endl;
-								ostFinal << "}" << std::endl;
+								ostFinal << "{";
+								ostFinal << "\"result\" : \"error\",";
+								ostFinal << "\"description\" : \"error inserting into user feed\"";
+								ostFinal << "}";
 							}
 						}
 						else
 						{
-							{
-								CLog			log;
-								ostringstream	ostTmp;
-
-								ostTmp.str("");
-								ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": finding skill in users_skill (" << ost.str() << ")";
-								log.Write(ERROR, ostTmp.str());
-							}
+							MESSAGE_ERROR("", "", "skill(" + userSkillID + ") not found in users_skill");
 
 							ostFinal.str("");
-							ostFinal << "{" << std::endl;
-							ostFinal << "\"result\" : \"error\"," << std::endl;
-							ostFinal << "\"description\" : \"error finding skill\"" << std::endl;
-							ostFinal << "}" << std::endl;
+							ostFinal << "{";
+							ostFinal << "\"result\" : \"error\",";
+							ostFinal << "\"description\" : \"error finding skill\"";
+							ostFinal << "}";
 						}
 					}
 					else
 					{
-						{
-							CLog			log;
-							ostringstream	ostTmp;
-
-							ostTmp.str("");
-							ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": inserting into skill_confirmed DB (" << ost.str() << ")";
-							log.Write(ERROR, ostTmp.str());
-						}
+						MESSAGE_ERROR("", "", gettext("SQL syntax error"));
 
 						ostFinal.str("");
-						ostFinal << "{" << std::endl;
-						ostFinal << "\"result\" : \"error\"," << std::endl;
-						ostFinal << "\"description\" : \"error inserting into skill DB\"" << std::endl;
-						ostFinal << "}" << std::endl;
+						ostFinal << "{";
+						ostFinal << "\"result\" : \"error\",";
+						ostFinal << "\"description\" : \"error inserting into skill DB\"";
+						ostFinal << "}";
 					}
 				}
 				else
 				{
 						ostFinal.str("");
-						ostFinal << "{" << std::endl;
-						ostFinal << "\"result\" : \"success\"," << std::endl;
-						ostFinal << "\"description\" : \"already approved by this user\"" << std::endl;
-						ostFinal << "}" << std::endl;
+						ostFinal << "{";
+						ostFinal << "\"result\" : \"success\",";
+						ostFinal << "\"description\" : \"already approved by this user\"";
+						ostFinal << "}";
 				}
 
 			}
 			else
 			{
-				{
-					CLog	log;
-					ostringstream	ost;
-
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": userSkillID [" << userSkillID << "] is unknown/empty";
-					log.Write(DEBUG, ost.str());
-				}
+				MESSAGE_DEBUG("", "", "userSkillID [" + userSkillID + "] is unknown/empty");
 
 				ostFinal.str("");
-				ostFinal << "{" << std::endl;
-				ostFinal << "\"result\" : \"error\"," << std::endl;
-				ostFinal << "\"description\" : \"error parameters sent to server\"" << std::endl;
-				ostFinal << "}" << std::endl;
+				ostFinal << "{";
+				ostFinal << "\"result\" : \"error\",";
+				ostFinal << "\"description\" : \"error parameters sent to server\"";
+				ostFinal << "}";
 			}
 
 			indexPage.RegisterVariableForce("result", ostFinal.str());
@@ -11796,14 +9760,7 @@ int main()
 			}
 			else
 			{
-				{
-					CLog	log;
-					ostringstream	ost;
-
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": userSkillID [" << userSkillID << "] is unknown/empty";
-					log.Write(DEBUG, ost.str());
-				}
+				MESSAGE_DEBUG("", "", "userSkillID [" + userSkillID + "] is unknown/empty");
 
 				ostFinal.str("");
 				ostFinal << "{" << std::endl;
@@ -11849,14 +9806,7 @@ int main()
 			{
 				ostringstream	ost;
 
-				{
-					CLog	log;
-					ostringstream	ost;
-
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": name [" << firstName << "]";
-					log.Write(DEBUG, ost.str());
-				}
+				MESSAGE_DEBUG("", "", "name [" + firstName + "]");
 
 				ost.str("");
 				ost << "update `users` set `name`=\"" << firstName << "\" , `sex`=\"" << AutodetectSexByName(firstName, &db) << "\"  WHERE `id`=\"" << user.GetID() << "\";";
@@ -11876,14 +9826,7 @@ int main()
 				else
 				{
 
-					{
-						CLog			log;
-						ostringstream	ostTmp;
-
-						ostTmp.str("");
-						ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": inserting into DB (" << ost.str() << ")";
-						log.Write(ERROR, ostTmp.str());
-					}
+					MESSAGE_ERROR("", "", gettext("SQL syntax error"));
 
 					ostFinal.str("");
 					ostFinal << "{" << std::endl;
@@ -11894,14 +9837,9 @@ int main()
 			}
 			else
 			{
-				ostringstream	ost;
-				{
-					CLog	log;
+				MESSAGE_DEBUG("", "", "firstName [" + firstName + "] is empty");
 
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": firstName [" << firstName << "] is empty";
-					log.Write(DEBUG, ost.str());
-				}
+				ostringstream	ost;
 
 				ost.str("");
 				ost << "update `users` set `name`=\"\" WHERE `id`='" << user.GetID() << "'";
@@ -11920,15 +9858,7 @@ int main()
 				}
 				else
 				{
-
-					{
-						CLog			log;
-						ostringstream	ostTmp;
-
-						ostTmp.str("");
-						ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": inserting into DB (" << ost.str() << ")";
-						log.Write(ERROR, ostTmp.str());
-					}
+					MESSAGE_ERROR("", "", gettext("SQL syntax error"));
 
 					ostFinal.str("");
 					ostFinal << "{" << std::endl;
@@ -11971,14 +9901,7 @@ int main()
 			{
 				ostringstream	ost;
 
-				{
-					CLog	log;
-					ostringstream	ost;
-
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": name [" << lastName << "]";
-					log.Write(DEBUG, ost.str());
-				}
+				MESSAGE_DEBUG("", "", "name [" + lastName + "]");
 
 				ost.str("");
 				ost << "update users set `nameLast`=\"" << lastName << "\" WHERE `id`='" << user.GetID() << "'";
@@ -11997,15 +9920,7 @@ int main()
 				}
 				else
 				{
-
-					{
-						CLog			log;
-						ostringstream	ostTmp;
-
-						ostTmp.str("");
-						ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": inserting into DB (" << ost.str() << ")";
-						log.Write(ERROR, ostTmp.str());
-					}
+					MESSAGE_ERROR("", "", gettext("SQL syntax error"));
 
 					ostFinal.str("");
 					ostFinal << "{" << std::endl;
@@ -12016,14 +9931,9 @@ int main()
 			}
 			else
 			{
-				ostringstream	ost;
-				{
-					CLog	log;
+				MESSAGE_DEBUG("", "", "lastName [" + lastName + "] is empty");
 
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": lastName [" << lastName << "] is empty";
-					log.Write(DEBUG, ost.str());
-				}
+				ostringstream	ost;
 
 				ost.str("");
 				ost << "update users set `nameLast`=\"\" WHERE `id`='" << user.GetID() << "'";
@@ -12042,15 +9952,7 @@ int main()
 				}
 				else
 				{
-
-					{
-						CLog			log;
-						ostringstream	ostTmp;
-
-						ostTmp.str("");
-						ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": inserting into DB (" << ost.str() << ")";
-						log.Write(ERROR, ostTmp.str());
-					}
+					MESSAGE_ERROR("", "", gettext("SQL syntax error"));
 
 					ostFinal.str("");
 					ostFinal << "{" << std::endl;
@@ -12092,16 +9994,9 @@ int main()
 
 			if((lastName.length() > 0)) 
 			{
+				MESSAGE_DEBUG("", "", "name [" + lastName + "]");
+
 				ostringstream	ost;
-
-				{
-					CLog	log;
-					ostringstream	ost;
-
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": name [" << lastName << "]";
-					log.Write(DEBUG, ost.str());
-				}
 
 				ost.str("");
 				ost << "update users set `nameLast`=\"" << lastName << "\" WHERE `id`='" << user.GetID() << "'";
@@ -12115,26 +10010,14 @@ int main()
 				}
 				else
 				{
-					{
-						CLog			log;
-						ostringstream	ostTmp;
-
-						ostTmp.str("");
-						ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": inserting into DB (" << ost.str() << ")";
-						log.Write(ERROR, ostTmp.str());
-					}
+					MESSAGE_ERROR("", "", gettext("SQL syntax error"));
 				}
 			}
 			else
 			{
-				ostringstream	ost;
-				{
-					CLog	log;
+				MESSAGE_DEBUG("", "", "lastName [" + lastName + "] is empty");
 
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": lastName [" << lastName << "] is empty";
-					log.Write(DEBUG, ost.str());
-				}
+				ostringstream	ost;
 
 				ost.str("");
 				ost << "update users set `nameLast`=\"\" WHERE `id`='" << user.GetID() << "'";
@@ -12148,14 +10031,7 @@ int main()
 				}
 				else
 				{
-					{
-						CLog			log;
-						ostringstream	ostTmp;
-
-						ostTmp.str("");
-						ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": inserting into DB (" << ost.str() << ")";
-						log.Write(ERROR, ostTmp.str());
-					}
+					MESSAGE_ERROR("", "", gettext("SQL syntax error"));
 				}
 
 			}
@@ -12164,14 +10040,7 @@ int main()
 			{
 				ostringstream	ost;
 
-				{
-					CLog	log;
-					ostringstream	ost;
-
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": name [" << firstName << "]";
-					log.Write(DEBUG, ost.str());
-				}
+				MESSAGE_DEBUG("", "", "name [" + firstName + "]");
 
 				ost.str("");
 				ost << "update `users` set `name`=\"" << firstName << "\", `sex`=\"" << AutodetectSexByName(firstName, &db) << "\" WHERE `id`='" << user.GetID() << "'";
@@ -12190,15 +10059,7 @@ int main()
 				}
 				else
 				{
-
-					{
-						CLog			log;
-						ostringstream	ostTmp;
-
-						ostTmp.str("");
-						ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": inserting into DB (" << ost.str() << ")";
-						log.Write(ERROR, ostTmp.str());
-					}
+					MESSAGE_ERROR("", "", gettext("SQL syntax error"));
 
 					ostFinal.str("");
 					ostFinal << "{" << std::endl;
@@ -12209,14 +10070,8 @@ int main()
 			}
 			else
 			{
+				MESSAGE_DEBUG("", "", "firstName [" + firstName + "] is empty");
 				ostringstream	ost;
-				{
-					CLog	log;
-
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": firstName [" << firstName << "] is empty";
-					log.Write(DEBUG, ost.str());
-				}
 
 				ost.str("");
 				ost << "update `users` set `name`=\"\" WHERE `id`='" << user.GetID() << "'";
@@ -12235,15 +10090,7 @@ int main()
 				}
 				else
 				{
-
-					{
-						CLog			log;
-						ostringstream	ostTmp;
-
-						ostTmp.str("");
-						ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": inserting into DB (" << ost.str() << ")";
-						log.Write(ERROR, ostTmp.str());
-					}
+					MESSAGE_ERROR("", "", gettext("SQL syntax error"));
 
 					ostFinal.str("");
 					ostFinal << "{" << std::endl;
@@ -12288,18 +10135,9 @@ int main()
 			{
 				ostringstream	ost;
 
-				{
-					CLog	log;
-					ostringstream	ost;
+				MESSAGE_DEBUG("", "", "date [" + occupationStart + "]");
 
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": date [" << occupationStart << "]";
-					log.Write(DEBUG, ost.str());
-				}
-
-				ost.str("");
-				ost << "update `users_company` set `occupation_start`=\"" << occupationStart << "\" WHERE `id`='" << companyId << "'";
-				db.Query(ost.str());
+				db.Query("update `users_company` set `occupation_start`=\"" + occupationStart + "\" WHERE `id`=\"" + companyId + "\";");
 
 				if(!db.isError())
 				{
@@ -12315,15 +10153,7 @@ int main()
 					}
 					else
 					{
-
-						{
-							CLog			log;
-							ostringstream	ostTmp;
-
-							ostTmp.str("");
-							ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": inserting into feed DB (" << ost.str() << ")";
-							log.Write(ERROR, ostTmp.str());
-						}
+						MESSAGE_ERROR("", "", gettext("SQL syntax error"));
 
 						ostFinal.str("");
 						ostFinal << "{" << std::endl;
@@ -12334,14 +10164,7 @@ int main()
 				}
 				else
 				{
-					{
-						CLog			log;
-						ostringstream	ostTmp;
-
-						ostTmp.str("");
-						ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": updating DB (" << db.isError() << ")";
-						log.Write(ERROR, ostTmp.str());
-					}
+					MESSAGE_ERROR("", "", "updating DB (" + db.GetErrorMessage() + ")");
 
 					ostFinal.str("");
 					ostFinal << "{" << std::endl;
@@ -12355,14 +10178,8 @@ int main()
 			else
 			{
 				ostFinal << "{\"result\":\"error\", \"description\":\"issue with input parameters\"}";
-				{
-					CLog	log;
-					ostringstream	ost;
 
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": occupationStart [" << occupationStart << "] or companyId [" << companyId << "] is unknown/empty";
-					log.Write(DEBUG, ost.str());
-				}
+				MESSAGE_DEBUG("", "", "occupationStart [" + occupationStart + "] or companyId [" + companyId + "] is unknown/empty");
 			}
 
 			indexPage.RegisterVariableForce("result", ostFinal.str());
@@ -12398,21 +10215,11 @@ int main()
 			{
 				ostringstream	ost;
 
+				MESSAGE_DEBUG("", "", "date [" + occupationStart + "]");
+
+				if(db.Query("SELECT * FROM `users_school` WHERE `user_id`=\"" + user.GetID() + "\" and `id`=\"" + userSchoolID + "\";"))
 				{
-					CLog	log;
-					ostringstream	ost;
-
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": date [" << occupationStart << "]";
-					log.Write(DEBUG, ost.str());
-				}
-
-
-				ost.str("");
-				ost << "SELECT * FROM `users_school` WHERE `user_id`=\"" << user.GetID() << "\" and `id`=\"" << userSchoolID << "\";";
-				if(db.Query(ost.str()))
-				{
-					if(atoi(occupationStart.c_str()) <= stoi(db.Get(0, "occupation_finish")))
+					if(stoi(occupationStart) <= stoi(db.Get(0, "occupation_finish")))
 					{
 
 						ost.str("");
@@ -12427,97 +10234,62 @@ int main()
 							if(db.InsertQuery(ost.str()))
 							{
 								ostFinal.str("");
-								ostFinal << "{" << std::endl;
-								ostFinal << "\"result\" : \"success\"" << std::endl;
-								ostFinal << "}" << std::endl;
+								ostFinal << "{";
+								ostFinal << "\"result\" : \"success\"";
+								ostFinal << "}";
 							}
 							else
 							{
-
-								{
-									CLog			log;
-									ostringstream	ostTmp;
-
-									ostTmp.str("");
-									ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": inserting into feed DB (" << ost.str() << ")";
-									log.Write(ERROR, ostTmp.str());
-								}
+								MESSAGE_ERROR("", "", gettext("SQL syntax error"));
 
 								ostFinal.str("");
-								ostFinal << "{" << std::endl;
-								ostFinal << "\"result\" : \"error\"," << std::endl;
-								ostFinal << "\"description\" : \"error inserting into user feed\"" << std::endl;
-								ostFinal << "}" << std::endl;
+								ostFinal << "{";
+								ostFinal << "\"result\" : \"error\",";
+								ostFinal << "\"description\" : \"error inserting into user feed\"";
+								ostFinal << "}";
 							}
 						}
 						else
 						{
-							{
-								CLog			log;
-								ostringstream	ostTmp;
-
-								ostTmp.str("");
-								ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": updating DB (" << db.isError() << ")";
-								log.Write(ERROR, ostTmp.str());
-							}
+							MESSAGE_ERROR("", "", "updating DB (" + db.GetErrorMessage() + ")");
 
 							ostFinal.str("");
-							ostFinal << "{" << std::endl;
-							ostFinal << "\"result\" : \"error\"," << std::endl;
-							ostFinal << "\"description\" : \"error updating occupation start in company\"" << std::endl;
-							ostFinal << "}" << std::endl;
+							ostFinal << "{";
+							ostFinal << "\"result\" : \"error\",";
+							ostFinal << "\"description\" : \"error updating occupation start in company\"";
+							ostFinal << "}";
 
 						}
 
 					}
 					else
 					{
-						{
-							CLog			log;
-							ostringstream	ostTmp;
-
-							ostTmp.str("");
-							ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": updating period because of error in start (" << occupationStart << ") and finish dates";
-							log.Write(DEBUG, ostTmp.str());
-						}
+						MESSAGE_DEBUG("", "", "updating period because of error in start (" + occupationStart + ") and finish dates");
 
 						ostFinal.str("");
-						ostFinal << "{" << std::endl;
-						ostFinal << "\"result\" : \"error\"," << std::endl;
-						ostFinal << "\"description\" : \"error start and finish date\"" << std::endl;
-						ostFinal << "}" << std::endl;
+						ostFinal << "{";
+						ostFinal << "\"result\" : \"error\",";
+						ostFinal << "\"description\" : \"error start and finish date\"";
+						ostFinal << "}";
 					}
 					
 				}
 				else
 				{
-					{
-						CLog			log;
-						ostringstream	ostTmp;
-
-						ostTmp.str("");
-						ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": finding user school entry in DB (" << ost.str() << ")";
-						log.Write(ERROR, ostTmp.str());
-					}
+					MESSAGE_ERROR("", "", "user not found");
 
 					ostFinal.str("");
-					ostFinal << "{" << std::endl;
-					ostFinal << "\"result\" : \"error\"," << std::endl;
-					ostFinal << "\"description\" : \"error finding user school entry in DB\"" << std::endl;
-					ostFinal << "}" << std::endl;
+					ostFinal << "{";
+					ostFinal << "\"result\" : \"error\",";
+					ostFinal << "\"description\" : \"error finding user school entry in DB\"";
+					ostFinal << "}";
 				}
 			}
 			else
 			{
 				ostFinal << "{\"result\":\"error\", \"description\":\"issue with input parameters\"}";
-				{
-					CLog	log;
-					ostringstream	ost;
 
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": occupationStart [" << occupationStart << "] or userSchoolID [" << userSchoolID << "] is unknown/empty";
-					log.Write(DEBUG, ost.str());
-				}
+				MESSAGE_DEBUG("", "", "occupationStart [" + occupationStart + "] or userSchoolID [" + userSchoolID + "] is unknown/empty");
 			}
 
 			indexPage.RegisterVariableForce("result", ostFinal.str());
@@ -12551,23 +10323,15 @@ int main()
 
 			if((occupationFinish.length() > 0) && (userSchoolID.length() > 0)) 
 			{
+				MESSAGE_DEBUG("", "", "date [" + occupationFinish + "]");
+
 				ostringstream	ost;
-
-				{
-					CLog	log;
-					ostringstream	ost;
-
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": date [" << occupationFinish << "]";
-					log.Write(DEBUG, ost.str());
-				}
-
 
 				ost.str("");
 				ost << "SELECT * FROM `users_school` WHERE `user_id`=\"" << user.GetID() << "\" and `id`=\"" << userSchoolID << "\";";
 				if(db.Query(ost.str()))
 				{
-					if(stoi(db.Get(0, "occupation_start")) <= atoi(occupationFinish.c_str()))
+					if(stoi(db.Get(0, "occupation_start")) <= stoi(occupationFinish))
 					{
 
 						ost.str("");
@@ -12586,15 +10350,7 @@ int main()
 						}
 						else
 						{
-
-							{
-								CLog			log;
-								ostringstream	ostTmp;
-
-								ostTmp.str("");
-								ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": inserting into feed DB (" << ost.str() << ")";
-								log.Write(ERROR, ostTmp.str());
-							}
+							MESSAGE_ERROR("", "", gettext("SQL syntax error"));
 
 							ostFinal.str("");
 							ostFinal << "{" << std::endl;
@@ -12605,14 +10361,7 @@ int main()
 					}
 					else
 					{
-						{
-							CLog			log;
-							ostringstream	ostTmp;
-
-							ostTmp.str("");
-							ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": updating period because of error in start and finish (" << occupationFinish << ") dates";
-							log.Write(DEBUG, ostTmp.str());
-						}
+						MESSAGE_DEBUG("", "", "updating period because of error in start and finish (" + occupationFinish + ") dates");
 
 						ostFinal.str("");
 						ostFinal << "{" << std::endl;
@@ -12624,14 +10373,7 @@ int main()
 				}
 				else
 				{
-					{
-						CLog			log;
-						ostringstream	ostTmp;
-
-						ostTmp.str("");
-						ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": finding user school entry in DB (" << ost.str() << ")";
-						log.Write(ERROR, ostTmp.str());
-					}
+					MESSAGE_ERROR("", "", "user not found");
 
 					ostFinal.str("");
 					ostFinal << "{" << std::endl;
@@ -12643,14 +10385,7 @@ int main()
 			else
 			{
 				ostFinal << "{\"result\":\"error\", \"description\":\"issue with input parameters\"}";
-				{
-					CLog	log;
-					ostringstream	ost;
-
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": occupationFinish [" << occupationFinish << "] or userSchoolID [" << userSchoolID << "] is unknown/empty";
-					log.Write(DEBUG, ost.str());
-				}
+				MESSAGE_DEBUG("", "", "occupationFinish [" + occupationFinish + "] or userSchoolID [" + userSchoolID + "] is unknown/empty");
 			}
 
 			indexPage.RegisterVariableForce("result", ostFinal.str());
@@ -12684,23 +10419,15 @@ int main()
 
 			if((occupationStart.length() > 0) && (userUniversityID.length() > 0)) 
 			{
+				MESSAGE_DEBUG("", "", "date [" + occupationStart + "]");
+
 				ostringstream	ost;
-
-				{
-					CLog	log;
-					ostringstream	ost;
-
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": date [" << occupationStart << "]";
-					log.Write(DEBUG, ost.str());
-				}
-
 
 				ost.str("");
 				ost << "SELECT * FROM `users_university` WHERE `user_id`=\"" << user.GetID() << "\" and `id`=\"" << userUniversityID << "\";";
 				if(db.Query(ost.str()))
 				{
-					if(atoi(occupationStart.c_str()) <= stoi(db.Get(0, "occupation_finish")))
+					if(stoi(occupationStart) <= stoi(db.Get(0, "occupation_finish")))
 					{
 
 						ost.str("");
@@ -12719,15 +10446,7 @@ int main()
 						}
 						else
 						{
-
-							{
-								CLog			log;
-								ostringstream	ostTmp;
-
-								ostTmp.str("");
-								ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": inserting into feed DB (" << ost.str() << ")";
-								log.Write(ERROR, ostTmp.str());
-							}
+							MESSAGE_ERROR("", "", gettext("SQL syntax error"));
 
 							ostFinal.str("");
 							ostFinal << "{" << std::endl;
@@ -12738,14 +10457,7 @@ int main()
 					}
 					else
 					{
-						{
-							CLog			log;
-							ostringstream	ostTmp;
-
-							ostTmp.str("");
-							ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": updating period because of error in start (" << occupationStart << ") and finish dates";
-							log.Write(DEBUG, ostTmp.str());
-						}
+						MESSAGE_DEBUG("", "", "updating period because of error in start (" + occupationStart + ") and finish dates");
 
 						ostFinal.str("");
 						ostFinal << "{" << std::endl;
@@ -12757,14 +10469,7 @@ int main()
 				}
 				else
 				{
-					{
-						CLog			log;
-						ostringstream	ostTmp;
-
-						ostTmp.str("");
-						ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": finding user university entry in DB (" << ost.str() << ")";
-						log.Write(ERROR, ostTmp.str());
-					}
+					MESSAGE_ERROR("", "", "entry not found in users_university");
 
 					ostFinal.str("");
 					ostFinal << "{" << std::endl;
@@ -12776,14 +10481,8 @@ int main()
 			else
 			{
 				ostFinal << "{\"result\":\"error\", \"description\":\"issue with input parameters\"}";
-				{
-					CLog	log;
-					ostringstream	ost;
 
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": occupationStart [" << occupationStart << "] or userUniversityID [" << userUniversityID << "] is unknown/empty";
-					log.Write(DEBUG, ost.str());
-				}
+				MESSAGE_DEBUG("", "", "occupationStart [" + occupationStart + "] or userUniversityID [" + userUniversityID + "] is unknown/empty");
 			}
 
 			indexPage.RegisterVariableForce("result", ostFinal.str());
@@ -12817,23 +10516,15 @@ int main()
 
 			if((occupationFinish.length() > 0) && (userUniversityID.length() > 0)) 
 			{
+				MESSAGE_DEBUG("", "", "date [" + occupationFinish + "]");
+
 				ostringstream	ost;
-
-				{
-					CLog	log;
-					ostringstream	ost;
-
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": date [" << occupationFinish << "]";
-					log.Write(DEBUG, ost.str());
-				}
-
 
 				ost.str("");
 				ost << "SELECT * FROM `users_university` WHERE `user_id`=\"" << user.GetID() << "\" and `id`=\"" << userUniversityID << "\";";
 				if(db.Query(ost.str()))
 				{
-					if(stoi(db.Get(0, "occupation_start")) <= atoi(occupationFinish.c_str()))
+					if(stoi(db.Get(0, "occupation_start")) <= stoi(occupationFinish))
 					{
 
 						ost.str("");
@@ -12852,15 +10543,7 @@ int main()
 						}
 						else
 						{
-
-							{
-								CLog			log;
-								ostringstream	ostTmp;
-
-								ostTmp.str("");
-								ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": inserting into feed DB (" << ost.str() << ")";
-								log.Write(ERROR, ostTmp.str());
-							}
+							MESSAGE_ERROR("", "", gettext("SQL syntax error"));
 
 							ostFinal.str("");
 							ostFinal << "{" << std::endl;
@@ -12871,14 +10554,7 @@ int main()
 					}
 					else
 					{
-						{
-							CLog			log;
-							ostringstream	ostTmp;
-
-							ostTmp.str("");
-							ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": updating period because of error in start and finish (" << occupationFinish << ") dates";
-							log.Write(DEBUG, ostTmp.str());
-						}
+						MESSAGE_DEBUG("", "", "updating period because of error in start and finish (" + occupationFinish + ") dates");
 
 						ostFinal.str("");
 						ostFinal << "{" << std::endl;
@@ -12890,14 +10566,7 @@ int main()
 				}
 				else
 				{
-					{
-						CLog			log;
-						ostringstream	ostTmp;
-
-						ostTmp.str("");
-						ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": finding user university entry in DB (" << ost.str() << ")";
-						log.Write(ERROR, ostTmp.str());
-					}
+					MESSAGE_ERROR("", "", "entry not found in users_university");
 
 					ostFinal.str("");
 					ostFinal << "{" << std::endl;
@@ -12909,14 +10578,7 @@ int main()
 			else
 			{
 				ostFinal << "{\"result\":\"error\", \"description\":\"issue with input parameters\"}";
-				{
-					CLog	log;
-					ostringstream	ost;
-
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": occupationFinish [" << occupationFinish << "] or userUniversityID [" << userUniversityID << "] is unknown/empty";
-					log.Write(DEBUG, ost.str());
-				}
+				MESSAGE_DEBUG("", "", "occupationFinish [" + occupationFinish + "] or userUniversityID [" + userUniversityID + "] is unknown/empty");
 			}
 
 			indexPage.RegisterVariableForce("result", ostFinal.str());
@@ -12951,14 +10613,7 @@ int main()
 			{
 				ostringstream	ost;
 
-				{
-					CLog	log;
-					ostringstream	ost;
-
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": date [" << occupationFinish << "]";
-					log.Write(DEBUG, ost.str());
-				}
+				MESSAGE_DEBUG("", "", "date [" + occupationFinish + "]");
 
 				ost.str("");
 				ost << "update users_company set `occupation_finish`=\"" << occupationFinish << "\" WHERE `id`='" << companyId << "'";
@@ -12977,15 +10632,7 @@ int main()
 					}
 					else
 					{
-
-						{
-							CLog			log;
-							ostringstream	ostTmp;
-
-							ostTmp.str("");
-							ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": inserting into feed DB (" << ost.str() << ")";
-							log.Write(ERROR, ostTmp.str());
-						}
+						MESSAGE_ERROR("", "", gettext("SQL syntax error"));
 
 						ostFinal.str("");
 						ostFinal << "{" << std::endl;
@@ -12996,14 +10643,7 @@ int main()
 				}
 				else
 				{
-					{
-						CLog			log;
-						ostringstream	ostTmp;
-
-						ostTmp.str("");
-						ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": updating DB (" << db.isError() << ")";
-						log.Write(ERROR, ostTmp.str());
-					}
+					MESSAGE_ERROR("", "", "updating DB (" + db.GetErrorMessage() + ")");
 
 					ostFinal.str("");
 					ostFinal << "{" << std::endl;
@@ -13017,15 +10657,7 @@ int main()
 			else
 			{
 				ostFinal << "{\"result\":\"error\", \"description\":\"issue with input parameters\"}";
-				{
-					CLog	log;
-					ostringstream	ost;
-
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": occupationFinish [" << occupationFinish << "] or companyId [" << companyId << "] is unknown/empty";
-					log.Write(DEBUG, ost.str());
-				}
-
+				MESSAGE_DEBUG("", "", "occupationFinish [" + occupationFinish + "] or companyId [" + companyId + "] is unknown/empty");
 			}
 
 
@@ -13060,17 +10692,9 @@ int main()
 
 			if((universityDegree.length() > 0) && (userUniversityID.length() > 0)) 
 			{
+				MESSAGE_DEBUG("", "", "degree [" + universityDegree + "]");
+
 				ostringstream	ost;
-
-				{
-					CLog	log;
-					ostringstream	ost;
-
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": degree [" << universityDegree << "]";
-					log.Write(DEBUG, ost.str());
-				}
-
 
 				ost.str("");
 				ost << "SELECT * FROM `users_university` WHERE `user_id`=\"" << user.GetID() << "\" and `id`=\"" << userUniversityID << "\";";
@@ -13094,15 +10718,7 @@ int main()
 					}
 					else
 					{
-
-						{
-							CLog			log;
-							ostringstream	ostTmp;
-
-							ostTmp.str("");
-							ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": inserting into feed DB (" << ost.str() << ")";
-							log.Write(ERROR, ostTmp.str());
-						}
+						MESSAGE_ERROR("", "", gettext("SQL syntax error"));
 
 						ostFinal.str("");
 						ostFinal << "{" << std::endl;
@@ -13113,14 +10729,7 @@ int main()
 				}
 				else
 				{
-					{
-						CLog			log;
-						ostringstream	ostTmp;
-
-						ostTmp.str("");
-						ostTmp << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": finding user university entry in DB (" << ost.str() << ")";
-						log.Write(ERROR, ostTmp.str());
-					}
+					MESSAGE_ERROR("", "", "entry not found in users_university");
 
 					ostFinal.str("");
 					ostFinal << "{" << std::endl;
@@ -13132,14 +10741,8 @@ int main()
 			else
 			{
 				ostFinal << "{\"result\":\"error\", \"description\":\"issue with input parameters\"}";
-				{
-					CLog	log;
-					ostringstream	ost;
 
-					ost.str("");
-					ost << string(__func__) + "[" + to_string(__LINE__) + "] " + action + ": universityDegree [" << universityDegree << "] or userUniversityID [" << userUniversityID << "] is unknown/empty";
-					log.Write(DEBUG, ost.str());
-				}
+				MESSAGE_DEBUG("", "", "universityDegree [" + universityDegree + "] or userUniversityID [" + userUniversityID + "] is unknown/empty")
 			}
 
 			indexPage.RegisterVariableForce("result", ostFinal.str());
@@ -13199,11 +10802,7 @@ int main()
 						}
 						else
 						{
-
-							{
-								CLog			log;
-								log.Write(ERROR, string(__func__) + "[" + to_string(__LINE__) + "] inserting into feed DB (" + ost.str() + ")");
-							}
+							MESSAGE_ERROR("", "", gettext("SQL syntax error"));
 
 							ostFinal.str("");
 							ostFinal << "{" << std::endl;
@@ -13214,10 +10813,7 @@ int main()
 					}
 					else
 					{
-						{
-							CLog			log;
-							log.Write(ERROR, string(__func__) + "[" + to_string(__LINE__) + "] updating DB [" + db.GetErrorMessage() + "]");
-						}
+						MESSAGE_ERROR("", "", "updating DB [" + db.GetErrorMessage() + "]");
 
 						ostFinal.str("");
 						ostFinal << "{" << std::endl;
@@ -13230,10 +10826,7 @@ int main()
 				}
 				else
 				{
-					{
-						CLog			log;
-						log.Write(ERROR, string(__func__) + "[" + to_string(__LINE__) + "] finding user language entry in DB (" + ost.str() + ")");
-					}
+					MESSAGE_ERROR("", "", "user language not found");
 
 					ostFinal.str("");
 					ostFinal << "{" << std::endl;
@@ -13509,33 +11102,27 @@ int main()
 		if(action == "delete_picture")
 		{
 			ostringstream	ost;
-			int		affected;
-			string		pic;
+			int				affected;
+			auto			pic = indexPage.GetVarsHandler()->Get("pic");
 
 			if(indexPage.GetVarsHandler()->Get("loginUser").length() <= 0)
 			{
-				CLog	log;
-
-				log.Write(WARNING, indexPage.GetVarsHandler()->Get("loginUser"), " try to fake system");
+				MESSAGE_ERROR("", action, "attempt to fake system");
 
 				indexPage.Redirect("/");
 			}
-			ost << "SELECT * FROM users WHERE  login='" << indexPage.GetVarsHandler()->Get("loginUser") << "'";
-			affected = db.Query(ost.str());
+
+			affected = db.Query("SELECT * FROM users WHERE  login='" + indexPage.GetVarsHandler()->Get("loginUser") + "'");
 			if(affected <= 0)
 			{
-				CLog	log;
+				MESSAGE_ERROR("", action, "there is no user " + indexPage.GetVarsHandler()->Get("loginUser"));
 
-				log.Write(ERROR, "there is no user ", indexPage.GetVarsHandler()->Get("loginUser"));
 				throw CExceptionHTML("no user");
 			}
 
-			pic = indexPage.GetVarsHandler()->Get("pic");
 			if(pic.length() > 5)
 			{
-				ost.str("");
-				ost << "DELETE FROM `users_photo` WHERE `file`='" << pic << "'";
-				db.Query(ost.str());
+				db.Query("DELETE FROM `users_photo` WHERE `file`='" + pic + "'");
 
 				ost.str("");
 				ost << "Фотография удалена.<br>";
@@ -13567,20 +11154,18 @@ int main()
 			{
 				MESSAGE_ERROR("", action, "(not an error, severity should be monitor) registered user(" + user.GetLogin() + ") attempts to access showmain page, redirect to default page");
 
-				indexPage.Redirect("/" + GetDefaultActionFromUserType(&user, &db) + "?rand=" + GetRandom(10));
+				indexPage.Redirect("/" + config.GetFromFile("default_action", user.GetType()) + "?rand=" + GetRandom(10));
 			}
 		}
 
 		if(action == "forget")
 		{
-			ostringstream	ost;
-			string		login;
-			CMailLocal	mail;
-
 			MESSAGE_DEBUG("", action, "start");
 
+			ostringstream	ost;
+			CMailLocal		mail;
+			auto			login = RemoveQuotas(indexPage.GetVarsHandler()->Get("login"));
 
-			login = RemoveQuotas(indexPage.GetVarsHandler()->Get("login"));
 			if(login.length() > 0)
 			{
 				int		affected;
@@ -13599,7 +11184,7 @@ int main()
 				{
 					indexPage.RegisterVariableForce("login", db.Get(0, "users_login"));
 					indexPage.RegisterVariableForce("passwd", db.Get(0, "users_passwd_passwd"));
-					indexPage.RegisterVariableForce("ip", getenv("REMOTE_ADDR"));
+					indexPage.RegisterVariableForce("ip", getenv("REMOTE_ADDR"));    /* Flawfinder: ignore */
 					mail.Send(db.Get(0, "users_email"), "forget", indexPage.GetVarsHandler(), &db);
 				}
 			}
@@ -13614,10 +11199,7 @@ int main()
 		}
 
 
-		{
-			CLog	log;
-			MESSAGE_DEBUG("", action, " end (action's == \"" + action + "\") condition");
-		}
+		MESSAGE_DEBUG("", action, " end (action's == \"" + action + "\") condition");
 
 		indexPage.OutTemplate();
 	}

@@ -21,4 +21,7 @@
 #include "utilities_connme.h"
 #include "locale.h"
 
+// --- admin definitions
+#define	ADMIN_LOG_FILE_NAME							string(LOGDIR) + DOMAIN_NAME + ".admin"
+
 #endif

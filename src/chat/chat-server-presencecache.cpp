@@ -256,7 +256,7 @@ bool CPresenceCache::AddUser(string strUserID)
 		log.Write(DEBUG, ost.str());
 	}
 
-	userID = atol(strUserID.c_str());
+	userID = stol(strUserID);
 	if(userID)
 	{
 		result = AddUser(userID);
