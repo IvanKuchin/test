@@ -44,6 +44,9 @@ jobs:
     # Load all steps #
     ##################
     steps:
+      - name: docker compose
+        run: |
+          docker-compose
       - name: docker network
         run: |
           docker network ls
