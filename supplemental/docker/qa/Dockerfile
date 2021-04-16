@@ -98,6 +98,12 @@ RUN git rev-parse HEAD > ./supplemental/git/git_commit_id
 RUN mkdir build
 RUN cd build && cmake .. && make -j2 && make install
 
+###########################
+# test connectivity to DB #
+###########################
+RUN apt install --no-install-recommends --no-install-suggests -y mysql-client
+RUN mysqladmin -u $DB_LOGIN -p$DB_PASSWORD -h $DB_HOST
+
 ################
 # run QA tests #
 ################
