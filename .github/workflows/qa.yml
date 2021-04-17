@@ -113,7 +113,7 @@ jobs:
       - name: Run qa container
         if: success()
         run: |
-          docker build -f ./supplemental/docker/qa/Dockerfile_sql -t qa_testing:${{ github.sha }} .
+          docker build -f ./supplemental/docker/qa/Dockerfile -t qa_testing:${{ github.sha }} .
           docker image ls
           docker network ls
           docker network ls --filter name=github --format "{{.Name}}"
