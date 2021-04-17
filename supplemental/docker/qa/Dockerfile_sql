@@ -1,0 +1,6 @@
+FROM ubuntu:xenial
+
+# following two commands suppose to be reused from cache
+RUN apt update &&  apt install --no-install-recommends --no-install-suggests -y mysql-client
+
+CMD ["/bin/bash", "-c", "mysqladmin -u root -ptoor -h mysql ping"]
