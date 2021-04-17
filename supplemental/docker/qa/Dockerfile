@@ -136,10 +136,10 @@ RUN cd build && cmake .. && make -j2 && make install
 ##########################
 # DB tables provisioning #
 ##########################
-COPY ./supplemental/docker/qa/dump.sql /root/
-COPY ./supplemental/docker/qa/run.sh /root/
-RUN chmod +x /root/run.sh
+# COPY ./supplemental/docker/qa/dump.sql /root/
+# COPY ./supplemental/docker/qa/run.sh /root/
+RUN chmod +x ./supplemental/docker/qa/run.sh
 
 STOPSIGNAL SIGTERM
 
-CMD ["/bin/bash", "-c", "/root/run.sh"]
+CMD ["/bin/bash", "-c", "./supplemental/docker/qa/run.sh"]
