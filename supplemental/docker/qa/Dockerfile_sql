@@ -3,9 +3,10 @@ FROM ubuntu:xenial
 # following two commands suppose to be reused from cache
 RUN apt update &&  apt install --no-install-recommends --no-install-suggests -y mysql-client
 
-# RUN mysql -u root -ptoor -h mysql -e "CREATE DATABASE db;"
-# RUN ["/bin/bash", "-c", "mysql -u root -ptoor -h mysql db < ./supplemental/docker/qa/dump.sql"]
-# RUN mysql -u root -ptoor -h mysql -e "show tables;"
+RUN mysql -u root -ptoor -h mysql -e "SHOW DATABASES;"
+RUN mysql -u root -ptoor -h mysql -e "CREATE DATABASE db;"
+RUN ["/bin/bash", "-c", "mysql -u root -ptoor -h mysql db < ./supplemental/docker/qa/dump.sql"]
+RUN mysql -u root -ptoor -h mysql -e "show tables;"
 
 
 CMD ["/bin/bash", "-c", "mysqladmin -u root -ptoor -h mysql ping"]
