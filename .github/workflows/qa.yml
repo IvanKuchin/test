@@ -113,7 +113,7 @@ jobs:
       - name: Run qa container
         if: success()
         run: |
-          docker build -f ./supplemental/docker/qa/Dockerfile -t sql-client .
+          docker build -f ./supplemental/docker/qa/Dockerfile_sql -t sql-client .
           docker image ls
           docker network ls
           docker network ls --filter name=github --format "{{.Name}}"
