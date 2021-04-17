@@ -44,12 +44,6 @@ jobs:
     # Load all steps #
     ##################
     steps:
-      - name: docker compose
-        run: |
-          docker-compose
-      - name: docker network
-        run: |
-          docker network ls
      #############################
      # Init deployment variables #
      #############################
@@ -98,7 +92,7 @@ jobs:
       ###########################################
       # Build and Push containers to registries #
       ###########################################
-      - name: Build and push
+      - name: Build qa container
         if: success()
         uses: docker/build-push-action@v2
         with:
@@ -112,7 +106,13 @@ jobs:
             DB_LOGIN=root
             DB_PASSWORD=toor
             DB_HOST=mysql
-          network: ${{ steps.set_variables.outputs.DOCKER_NET }}
           push: false
           tags: |
-            ghcr.io/ivankuchin/${{ steps.set_variables.outputs.BUILD_REPO }}:${{ github.sha }}
+            qa_testing:${{ github.sha }}
+
+      - name: Run qa container
+        if: success()
+        run: |
+          docker network ls
+          docker network ls --filter name=github --format "{{.Name}}"
+          docker run --rm -e "DB_NAME=db" -e "DB_LOGIN=root" -e "DB_PASSWORD=toor" -e "DB_HOST=mysql" --network ${{ steps.set_variables.outputs.DOCKER_NET }} qa_testing:${{ github.sha }}
