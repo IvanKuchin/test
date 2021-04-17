@@ -107,7 +107,7 @@ RUN mysqladmin -u $DB_LOGIN -p$DB_PASSWORD -h $DB_HOST ping
 ################
 # run QA tests #
 ################
-RUN cd build && ctest --output-on-failure
+# RUN cd build && ctest --output-on-failure
 
 ###################
 # DB installation #
@@ -135,4 +135,4 @@ RUN cd build && ctest --output-on-failure
 
 STOPSIGNAL SIGTERM
 
-# CMD ["/bin/bash", "-c", "cd build && ctest --output-on-failure"]
+CMD ["/bin/bash", "-c", "cd build && ctest --output-on-failure"]
