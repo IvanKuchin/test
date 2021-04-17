@@ -136,8 +136,7 @@ RUN cd build && cmake .. && make -j2 && make install
 ##########################
 # DB tables provisioning #
 ##########################
-# COPY ./supplemental/docker/qa/dump.sql /root/
-# COPY ./supplemental/docker/qa/run.sh /root/
+RUN apt install -f --no-install-recommends --no-install-suggests -y mysql-client
 RUN chmod +x ./supplemental/docker/qa/run.sh
 
 STOPSIGNAL SIGTERM
