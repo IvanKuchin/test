@@ -113,6 +113,7 @@ jobs:
       - name: Run qa container
         if: success()
         run: |
+          docker image ls
           docker network ls
           docker network ls --filter name=github --format "{{.Name}}"
           docker run --rm -e "DB_NAME=db" -e "DB_LOGIN=root" -e "DB_PASSWORD=toor" -e "DB_HOST=mysql" --network ${{ steps.set_variables.outputs.DOCKER_NET }} qa_testing:${{ github.sha }}
