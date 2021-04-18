@@ -37,7 +37,7 @@ jobs:
         image: mysql:5.7
         env:
           MYSQL_ROOT_PASSWORD: toor
-          MYSQL_DATABASE: db
+          # MYSQL_DATABASE: db
         options: --health-cmd="mysqladmin -ptoor ping" --health-interval=10s --health-timeout=5s --health-retries=3
 
     ##################
@@ -113,9 +113,10 @@ jobs:
       - name: Run qa container
         if: success()
         run: |
+          docker build -f ./supplemental/docker/qa/Dockerfile_sql -t qa_sql:${{ github.sha }} .
           docker build -f ./supplemental/docker/qa/Dockerfile -t qa_testing:${{ github.sha }} .
           docker image ls
           docker network ls
           docker network ls --filter name=github --format "{{.Name}}"
+          docker run --rm -e "DB_NAME=db" -e "DB_LOGIN=root" -e "DB_PASSWORD=toor" -e "DB_HOST=mysql" --network ${{ steps.set_variables.outputs.DOCKER_NET }} qa_sql:${{ github.sha }}
           docker run --rm -e "DB_NAME=db" -e "DB_LOGIN=root" -e "DB_PASSWORD=toor" -e "DB_HOST=mysql" --network ${{ steps.set_variables.outputs.DOCKER_NET }} qa_testing:${{ github.sha }}
-          # docker run --rm --network ${{ steps.set_variables.outputs.DOCKER_NET }} sql-client
