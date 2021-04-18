@@ -136,9 +136,9 @@ RUN cd build && cmake .. && make -j2 && make install
 ##########################
 # DB tables provisioning #
 ##########################
-RUN apt install -f --no-install-recommends --no-install-suggests -y mysql-client
-RUN chmod +x ./supplemental/docker/qa/run.sh
+# RUN apt install -f --no-install-recommends --no-install-suggests -y mysql-client
+# RUN chmod +x ./supplemental/docker/qa/run.sh
 
 STOPSIGNAL SIGTERM
 
-CMD ["/bin/bash", "-c", "./supplemental/docker/qa/run.sh"]
+CMD ["/bin/bash", "-c", "cd ./build && ctest --output-on-failure"]
