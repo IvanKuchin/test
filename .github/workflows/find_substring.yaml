@@ -3,7 +3,7 @@ name: Find substring WF
 on: [pull_request]
 jobs:
   build:
-    name: Find sudstring job
+    name: Find substring job
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
