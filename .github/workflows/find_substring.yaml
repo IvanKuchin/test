@@ -1,0 +1,13 @@
+---
+name: Find substring WF
+on: [pull_request]
+jobs:
+  build:
+    name: Find sudstring job
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v2.3.3
+      - name: Run bash script
+        shell: bash
+        run: .github/actions/find_substring/find_substring.sh
