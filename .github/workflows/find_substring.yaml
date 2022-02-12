@@ -13,7 +13,7 @@ jobs:
         run: sh -c .github/actions/find_substring/find_substring.sh
       - name: Create Commit Comment, if fail
         if: ${{ job.status == 'failure' }}
-        uses: peter-evans/commit-comment@v1.3.1
+        uses: peter-evans/commit-comment@v1
         with:
           body: Domain should not be used in source code        
     
