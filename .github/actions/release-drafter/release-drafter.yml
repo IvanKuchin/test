@@ -1,9 +1,5 @@
-name-template: 'v$RESOLVED_VERSION'
+name-template: 'v$RESOLVED_VERSION 🌈'
 tag-template: 'v$RESOLVED_VERSION'
-template: |
-  # Changelog ...
-  $CHANGES
-  See details of [all code changes](https://github.com/ivankuchin/test/compare/$PREVIOUS_TAG...v$RESOLVED_VERSION) since previous release
 categories:
   - title: '🚀 Features'
     labels:
@@ -15,45 +11,21 @@ categories:
       - 'bugfix'
       - 'bug'
   - title: '🧰 Maintenance'
-    labels:
-      - 'infrastructure'
-      - 'automation'
-      - 'documentation'
-      - 'code refinement'
-  - title: '🏎 Performance'
-    label: 'performance'
+    label: 'chore'
 change-template: '- $TITLE @$AUTHOR (#$NUMBER)'
+change-title-escapes: '\<*_&' # You can add # and @ to disable mentions, and add ` to disable code blocks.
 version-resolver:
   major:
     labels:
-      - 'breaking'
+      - 'major'
   minor:
     labels:
-      - 'enhancement'
-      - 'feature'
+      - 'minor'
   patch:
     labels:
-      - 'bug'
-      - 'bugfix'
-      - 'fix'
-      - 'maintenance'
-      - 'documentation'
-      - 'code refinement'
+      - 'patch'
   default: patch
-autolabeler:
-  - label: 'breaking'
-    title:
-      - '/breaking/i'
-  - label: 'enhancement'
-    title:
-      - '/enhancement/i'
-      - '/feature/i'
-  - label: 'bugfix'
-    title:
-      - '/fix/i'
-      - '/bug/i'
-  - label: 'infrastructure'
-    title:
-      - '/infrastructure/i'
-      - '/documentation/i'
-      - '/code refinement/i'
+template: |
+  ## Changes
+
+  $CHANGES
