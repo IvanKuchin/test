@@ -34,4 +34,3 @@ jobs:
       
       # Print ENV variables
       - run: echo "repository is $GITHUB_REPOSITORY, branch is $GITHUB_REF, commit id is $GITHUB_SHA"
-          
