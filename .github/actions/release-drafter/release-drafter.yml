@@ -1,4 +1,4 @@
-name-template: 'v$RESOLVED_VERSION 🌈'
+name-template: 'v$RESOLVED_VERSION'
 tag-template: 'v$RESOLVED_VERSION'
 categories:
   - title: '🚀 Features'
@@ -11,22 +11,65 @@ categories:
       - 'bugfix'
       - 'bug'
   - title: '🧰 Maintenance'
-    label: 'chore'
+    labels:
+      - 'infrastructure'
+      - 'automation'
+      - 'documentation'
+      - 'code refinement'
+  - title: '🏎 Performance'
+    label: 'performance'
+  - title: '🚑 Security'
+    label: 'security'
 change-template: '- $TITLE @$AUTHOR (#$NUMBER)'
-change-title-escapes: '\<*_&' # You can add # and @ to disable mentions, and add ` to disable code blocks.
 version-resolver:
   major:
     labels:
-      - 'major'
+      - 'breaking'
   minor:
     labels:
-      - 'minor'
+      - 'enhancement'
+      - 'feature'
   patch:
     labels:
-      - 'patch'
+      - 'bug'
+      - 'bugfix'
+      - 'fix'
+      - 'maintenance'
+      - 'documentation'
+      - 'code refinement'
+      - 'infrastructure'
+      - 'performance'
+      - 'security'
   default: patch
+autolabeler:
+  - label: 'breaking'
+    title:
+      - '/breaking/i'
+  - label: 'enhancement'
+    title:
+      - '/enhancement/i'
+      - '/feature/i'
+  - label: 'bugfix'
+    title:
+      - '/fix/i'
+      - '/bug/i'
+      - '/regression/i'
+  - label: 'infrastructure'
+    title:
+      - '/infrastructure/i'
+  - label: 'documentation'
+    title:
+      - '/doc/i'
+  - label: 'code refinement'
+    title:
+      - '/refine/i'
+      - '/clean/i'
+  - label: 'performance'
+    title:
+      - '/perf/i'
+  - label: 'security'
+    title:
+      - '/security/i'
 template: |
-  ## Changes
-
+  # Changelog ...
   $CHANGES
-  
