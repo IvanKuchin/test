@@ -1,13 +1,10 @@
 name: Release Drafter
 
 on:
-  # branches to consider in the event; optional, defaults to all
   push:
-    branches:
-      - master
-  # pull_request event is required only for autolabeler
+    branches: [master]
   pull_request:
-    # Only following types are handled by the action, but one can default to all as well
+    branches: [master]
     types: [opened, reopened, synchronize]
 
 jobs:
@@ -20,4 +17,4 @@ jobs:
           config-name: actions/release-drafter/release-drafter.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          
+
